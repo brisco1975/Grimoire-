@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #120708;
+  --color-surface: #1e0a0d;
+  --color-surface-2: #280e12;
+  --color-inset: #52161c;
+  --color-accent: #8f141f;
+  --color-accent-bright: #a81c27;
+  --color-gold: #d4af37;
+  --color-gold-dim: #c59b27;
+  --color-parchment: #f3ede2;
+  --color-parchment-muted: #b8a89a;
+  --color-link: #0bda51;
+  --color-danger: #a81c27;
+
+  --font-display: "Cinzel Decorative", "Cinzel", Georgia, serif;
+  --font-heading: "Cinzel", Georgia, serif;
+  --font-body: "Crimson Pro", "Iowan Old Style", Georgia, serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-parchment);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Respect notches/home-indicators on phones */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * NOTE: color is intentionally NOT set here for h1–h6. `font-display` and
+ * `font-heading` are also Tailwind-generated font-family utilities (from the
+ * --font-display/--font-heading theme tokens), so components combine them
+ * freely with whatever text-color utility (text-parchment, text-gold, etc.)
+ * the design calls for at that spot. Baking a color into these selectors
+ * would silently override those per-component color choices.
+ */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+textarea,
+input,
+select {
+  font-family: var(--font-body);
+  color-scheme: dark;
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: var(--color-parchment-muted);
+  opacity: 0.7;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-parchment);
+}
+
+/* Custom scrollbar for the atmospheric feel, still functional */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-inset);
+  border-radius: 6px;
+}
+
+a {
+  color: var(--color-link);
+}
+
+button {
+  font-family: var(--font-body);
+}
+
+/* Page-turn transition (phone breakpoint) */
+@keyframes page-turn-in {
+  from {
+    opacity: 0;
+    transform: rotateY(8deg) translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: rotateY(0deg) translateX(0);
+  }
+}
+
+.page-turn {
+  animation: page-turn-in 220ms ease-out;
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-turn {
+    animation: none;
+  }
+}
