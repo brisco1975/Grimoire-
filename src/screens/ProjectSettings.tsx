@@ -183,6 +183,10 @@ export default function ProjectSettings() {
                 Full-width (bottom)
               </button>
             </div>
+            <p className="text-parchment-muted text-xs -mt-1 m-0">
+              This mainly shows on tablet, unfolded foldable, and desktop/web screens — on a phone-sized screen,
+              cards stack in a single column either way, so the choice may not look different there.
+            </p>
             <button
               type="submit"
               disabled={!newLabel.trim()}
