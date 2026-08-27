@@ -14,11 +14,21 @@ export default function FullCardView() {
     cardKey: string
   }>()
   const navigate = useNavigate()
-  const { getScene, dataset, dispatch } = useApp()
+  const { getScene, getProject, dataset, dispatch } = useApp()
   const scene = sceneId ? getScene(sceneId) : undefined
+  const project = projectId ? getProject(projectId) : undefined
 
-  const cardMeta = TEXT_CARDS.find((c) => c.key === cardKey)
-  const key = cardMeta?.key as TextCardKey | undefined
+  const builtIn = TEXT_CARDS.find((c) => c.key === cardKey)
+  const customCard = project?.customCards.find((c) => c.id === cardKey)
+  const key = builtIn?.key as TextCardKey | undefined
+  const cardMeta = builtIn ?? (customCard ? { key: customCard.id, label: customCard.label } : undefined)
+
+  const value = builtIn && scene ? scene[key!] : customCard && scene ? (scene.customCardContent[customCard.id] ?? '') : ''
+  const saveValue = (raw: string) => {
+    if (!scene) return
+    if (builtIn) dispatch({ type: 'UPDATE_SCENE', id: scene.id, patch: { [key!]: raw } })
+    else if (customCard) dispatch({ type: 'UPDATE_CUSTOM_CARD_CONTENT', sceneId: scene.id, cardId: customCard.id, value: raw })
+  }
 
   const editorRef = useRef<LinkedTextEditorHandle>(null)
   const [showHint, setShowHint] = useState(!dataset.meta.hasSeenLinkHint)
@@ -38,7 +48,7 @@ export default function FullCardView() {
 
   const backTo = `/project/${projectId}/scene/${sceneId}`
 
-  if (!scene || !cardMeta || !key || !projectId) {
+  if (!scene || !cardMeta || !projectId) {
     return (
       <div className="flex-1 flex flex-col">
         <AppHeader title="Not found" onBack={() => navigate(backTo)} />
@@ -91,8 +101,8 @@ export default function FullCardView() {
             onClick={() => setPreviewing(false)}
             className="flex-1 min-h-[40vh] w-full rounded-lg border border-inset bg-surface text-parchment text-xl px-4 py-3 leading-relaxed whitespace-pre-wrap cursor-text"
           >
-            {scene[key].trim() ? (
-              <LinkedText text={scene[key]} entries={projectEntries} />
+            {value.trim() ? (
+              <LinkedText text={value} entries={projectEntries} />
             ) : (
               <span className="text-parchment-muted italic">Empty — tap to add</span>
             )}
@@ -100,12 +110,12 @@ export default function FullCardView() {
         ) : (
           <LinkedTextEditor
             ref={editorRef}
-            key={scene.id + key}
-            value={scene[key]}
+            key={scene.id + cardMeta.key}
+            value={value}
             projectId={projectId}
             autoFocus
             placeholder={`Write ${cardMeta.label.toLowerCase()} here…`}
-            onSave={(raw) => dispatch({ type: 'UPDATE_SCENE', id: scene.id, patch: { [key]: raw } })}
+            onSave={saveValue}
             onFirstFocus={() => {
               if (!dataset.meta.hasSeenLinkHint) {
                 setShowHint(true)

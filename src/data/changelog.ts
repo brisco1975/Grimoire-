@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.1.3'
+export const APP_VERSION = '2.2.0'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,18 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.2.0',
+    date: '2026-08-27',
+    changes: [
+      'Customizable cards, per project: turn any built-in card on/off in a project\'s new "Cards" settings screen, or create fully custom cards (compact or full-width) with the exact same editing, bracket-linking, and heading support as a built-in card. Hiding a card never deletes its content — it comes right back if you turn the card back on.',
+      'New Easter Eggs / Foreshadowing card for tracking deliberate hidden references and planted details, distinct from a plot Connection',
+      'Connections and Easter Eggs / Foreshadowing now anchor to the bottom of the Scene Page as full-width cards, Connections first — the compact grid above (Actions, Characters, Lore, Setting, Summary, Time) is unaffected',
+      'Connections can now target an "Unwritten Scene" — describe a scene you haven\'t written yet instead of picking an existing one — and later be edited to link to the real scene once it exists, with no need to delete and recreate the connection',
+      'Export now offers a native save-location picker where the browser supports it, instead of always silently downloading to the default folder',
+      'Export now says plainly when nothing has changed since your last export, with an "Export anyway" option, instead of showing an unexplained date with no file',
+    ],
+  },
   {
     version: '2.1.3',
     date: '2026-08-26',

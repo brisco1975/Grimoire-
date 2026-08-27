@@ -175,6 +175,13 @@ export default function TableOfContents() {
         <button
           type="button"
           className="text-gold-dim hover:text-gold transition-colors"
+          onClick={() => navigate(`/project/${projectId}/settings`)}
+        >
+          Cards
+        </button>
+        <button
+          type="button"
+          className="text-gold-dim hover:text-gold transition-colors"
           onClick={() => {
             setRenameValue(project.title)
             setRenaming(true)

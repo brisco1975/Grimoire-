@@ -1,5 +1,6 @@
 import { get, set } from 'idb-keyval'
-import { createEmptyDataset, SCHEMA_VERSION, type GrimoireDataset, type Scene } from '../types'
+import { createEmptyDataset, SCHEMA_VERSION, type CustomCardDef, type GrimoireDataset, type Project, type Scene, type SceneConnection } from '../types'
+import { makeId } from '../utils/id'
 
 const STORAGE_KEY = 'grimoire-dataset-v1'
 
@@ -33,6 +34,32 @@ function naturalCompare(a: string, b: string): number {
   return ax.length - bx.length
 }
 
+/** Backfills the `id` every SceneConnection now needs, and passes an Unwritten Scene placeholder through unchanged (no pre-v4 data ever had one). */
+function migrateConnections(raw: unknown): SceneConnection[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>).map((c) => {
+    const id = typeof c.id === 'string' && c.id ? c.id : makeId()
+    const note = typeof c.note === 'string' ? c.note : undefined
+    if (c.sceneId == null && typeof c.unwrittenDescription === 'string') {
+      return { id, sceneId: null, projectId: null, unwrittenDescription: c.unwrittenDescription, note }
+    }
+    return { id, sceneId: (c.sceneId as string) ?? '', projectId: (c.projectId as string) ?? '', note }
+  })
+}
+
+function migrateProjects(raw: unknown): Project[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>).map((p) => ({
+    id: p.id as string,
+    title: (p.title as string) ?? '',
+    customCards: Array.isArray(p.customCards) ? (p.customCards as CustomCardDef[]) : [],
+    cardVisibility:
+      p.cardVisibility && typeof p.cardVisibility === 'object' ? (p.cardVisibility as Record<string, boolean>) : {},
+    createdAt: (p.createdAt as string) ?? new Date().toISOString(),
+    updatedAt: (p.updatedAt as string) ?? new Date().toISOString(),
+  }))
+}
+
 /**
  * Migrates a dataset of an older/unknown schema version forward, applying
  * sensible defaults for missing fields rather than crashing. New fields
@@ -48,6 +75,16 @@ function naturalCompare(a: string, b: string): number {
  *
  * v2 -> v3: added meta.hasSeenLinkHint (defaults false — anyone upgrading
  * sees the bracket-link onboarding hint once, same as a fresh install).
+ *
+ * v3 -> v4: added per-project customizable cards (Project.customCards,
+ * Project.cardVisibility — default to none/empty, meaning every built-in
+ * card stays visible), Scene.easterEggs and Scene.customCardContent (both
+ * default to empty), and SceneConnection gained a stable `id` (backfilled
+ * for every pre-existing connection, keyed off nothing before now) plus
+ * support for an "Unwritten Scene" placeholder target (sceneId/projectId
+ * null, unwrittenDescription set) — no pre-existing connection was ever a
+ * placeholder, so old ones migrate straight across unchanged apart from
+ * gaining an id. Also added meta.lastExportedHash (defaults null).
  */
 export function migrateDataset(raw: unknown): GrimoireDataset {
   if (!raw || typeof raw !== 'object') return createEmptyDataset()
@@ -93,7 +130,12 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
       time: (s.time as string) ?? '',
       lore: (s.lore as string) ?? '',
       summary: (s.summary as string) ?? '',
-      connections: Array.isArray(s.connections) ? (s.connections as Scene['connections']) : [],
+      easterEggs: (s.easterEggs as string) ?? '',
+      connections: migrateConnections(s.connections),
+      customCardContent:
+        s.customCardContent && typeof s.customCardContent === 'object'
+          ? (s.customCardContent as Record<string, string>)
+          : {},
       createdAt: (s.createdAt as string) ?? new Date().toISOString(),
       updatedAt: (s.updatedAt as string) ?? new Date().toISOString(),
       // stash the legacy number transiently for the sort pass below
@@ -125,7 +167,7 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
 
   return {
     schemaVersion: SCHEMA_VERSION,
-    projects: Array.isArray(d.projects) ? (d.projects as GrimoireDataset['projects']) : empty.projects,
+    projects: Array.isArray(d.projects) ? migrateProjects(d.projects) : empty.projects,
     scenes: orderedScenes,
     indexEntries: rawIndexEntries.map((e) => ({
       id: e.id as string,
@@ -140,6 +182,7 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
     })),
     meta: {
       lastExportedAt: (rawMeta.lastExportedAt as string | null | undefined) ?? null,
+      lastExportedHash: (rawMeta.lastExportedHash as string | null | undefined) ?? null,
       hasSeenLinkHint: (rawMeta.hasSeenLinkHint as boolean | undefined) ?? false,
     },
   }

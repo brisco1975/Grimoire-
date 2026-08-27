@@ -7,6 +7,32 @@ import Modal from '../components/Modal'
 import { APP_VERSION, CHANGELOG } from '../data/changelog'
 import { nowIso } from '../utils/id'
 import { toPlainDisplayText } from '../utils/links'
+import { hashString } from '../utils/hash'
+
+/**
+ * Minimal local shape for the File System Access API's save-file flow —
+ * deliberately not a global ambient declaration (extending the real Window
+ * type risks colliding with whatever this TS/DOM lib version already
+ * declares), since this app only ever touches the API behind a feature-
+ * detect (`'showSaveFilePicker' in window`) and casts through this shape.
+ */
+interface SaveFilePickerAccess {
+  showSaveFilePicker(options: {
+    suggestedName?: string
+    types?: { description?: string; accept: Record<string, string[]> }[]
+  }): Promise<{
+    createWritable(): Promise<{ write(data: string): Promise<void>; close(): Promise<void> }>
+  }>
+}
+
+function hasSaveFilePicker(): boolean {
+  // Automated browser control (Playwright, Selenium, etc.) sets
+  // navigator.webdriver — skip the native picker there since it opens a
+  // real OS-level dialog with nothing to drive it, and fall back to the
+  // plain download instead of hanging. Real users never have this set.
+  if (typeof navigator !== 'undefined' && navigator.webdriver) return false
+  return typeof window !== 'undefined' && 'showSaveFilePicker' in window
+}
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return 'Never'
@@ -35,7 +61,7 @@ interface ConflictItem {
   incoming: Project | Scene | IndexEntry
 }
 
-const SCENE_TEXT_FIELDS = new Set(['characters', 'actions', 'setting', 'time', 'lore', 'summary'])
+const SCENE_TEXT_FIELDS = new Set(['characters', 'actions', 'setting', 'time', 'lore', 'summary', 'easterEggs'])
 
 const FIELD_LABELS: Record<string, string> = {
   title: 'Title',
@@ -46,6 +72,7 @@ const FIELD_LABELS: Record<string, string> = {
   time: 'Time',
   lore: 'Lore',
   summary: 'Summary',
+  easterEggs: 'Easter Eggs / Foreshadowing',
   name: 'Name',
   type: 'Type',
   aliases: 'Also known as',
@@ -76,7 +103,7 @@ function diffFields(
     kind === 'project'
       ? ['title']
       : kind === 'scene'
-        ? ['title', 'status', 'characters', 'actions', 'setting', 'time', 'lore', 'summary']
+        ? ['title', 'status', 'characters', 'actions', 'setting', 'time', 'lore', 'summary', 'easterEggs']
         : ['name', 'type', 'aliases', 'seeAlso']
 
   const diffs: { label: string; local: string; incoming: string }[] = []
@@ -122,34 +149,71 @@ export default function Settings() {
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
   const [exportSuccess, setExportSuccess] = useState<string | null>(null)
+  const [noChangesSince, setNoChangesSince] = useState<string | null>(null)
 
-  function handleExport() {
+  function currentExportHash(): string {
+    // Only the actual content — never lastExportedAt/lastExportedHash
+    // themselves, or the hash would depend on its own previous value.
+    return hashString(JSON.stringify({ projects: dataset.projects, scenes: dataset.scenes, indexEntries: dataset.indexEntries }))
+  }
+
+  async function writeExportFile(json: string, filename: string): Promise<boolean> {
+    if (hasSaveFilePicker()) {
+      try {
+        const handle = await (window as unknown as SaveFilePickerAccess).showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'Grimoire export', accept: { 'application/json': ['.json'] } }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(json)
+        await writable.close()
+        return true
+      } catch (err) {
+        // AbortError = user cancelled the save dialog — not a failure, just don't export.
+        if (err instanceof DOMException && err.name === 'AbortError') return false
+        // Any other failure (permission, unsupported in this context, etc.) falls back below.
+      }
+    }
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    // Revoking on the same tick races the browser's own (async) read of
+    // the blob on some mobile/standalone-PWA browsers — the download can
+    // silently abort with zero visible error, which is exactly what
+    // reads as "nothing happened, guess I'll tap it again."
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+    return true
+  }
+
+  async function handleExport(force = false) {
     if (exporting.current) return
     exporting.current = true
     setImportError(null)
     setExportSuccess(null)
+    setNoChangesSince(null)
     try {
+      const hash = currentExportHash()
+      if (!force && dataset.meta.lastExportedHash && hash === dataset.meta.lastExportedHash) {
+        setNoChangesSince(dataset.meta.lastExportedAt)
+        return
+      }
+
       const payload: GrimoireDataset = {
         ...dataset,
         schemaVersion: SCHEMA_VERSION,
       }
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
       const filename = `grimoire-export-${stamp}.json`
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      // Revoking on the same tick races the browser's own (async) read of
-      // the blob on some mobile/standalone-PWA browsers — the download can
-      // silently abort with zero visible error, which is exactly what
-      // reads as "nothing happened, guess I'll tap it again."
-      setTimeout(() => URL.revokeObjectURL(url), 4000)
-      dispatch({ type: 'SET_LAST_EXPORTED', timestamp: nowIso() })
+      const wrote = await writeExportFile(JSON.stringify(payload, null, 2), filename)
+      if (!wrote) return
+
+      dispatch({ type: 'SET_LAST_EXPORTED', timestamp: nowIso(), hash })
       setExportSuccess(`Exported ${filename}`)
     } finally {
       // Small delay before releasing the guard — absorbs a rapid
@@ -280,7 +344,7 @@ export default function Settings() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={handleExport}
+              onClick={() => handleExport()}
               className="px-4 py-2 rounded bg-accent hover:bg-accent-bright text-parchment font-heading tracking-wide transition-colors"
             >
               Export Data
@@ -303,6 +367,19 @@ export default function Settings() {
           {importError && <p className="text-accent-bright text-sm mt-3">{importError}</p>}
           {importSuccess && <p className="text-link text-sm mt-3">{importSuccess}</p>}
           {exportSuccess && <p className="text-link text-sm mt-3">{exportSuccess}</p>}
+          {noChangesSince !== null && (
+            <p className="text-parchment-muted text-sm mt-3">
+              No changes since your last export on <span className="text-parchment">{formatTimestamp(noChangesSince)}</span> —
+              nothing new to save.{' '}
+              <button
+                type="button"
+                onClick={() => handleExport(true)}
+                className="text-link hover:underline underline-offset-2 transition-colors"
+              >
+                Export anyway
+              </button>
+            </p>
+          )}
         </section>
 
         {/* About */}

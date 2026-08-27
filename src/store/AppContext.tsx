@@ -12,13 +12,14 @@ import {
 import {
   createEmptyDataset,
   SCHEMA_VERSION,
+  type ConnectionTarget,
+  type CustomCardDef,
   type EntryBehavior,
   type GrimoireDataset,
   type IndexEntry,
   type MatterPosition,
   type Project,
   type Scene,
-  type SceneConnection,
   type SceneKind,
   type SceneStatus,
 } from '../types'
@@ -50,9 +51,10 @@ type Action =
       title: string
       insertPosition?: InsertPosition
     }
-  | { type: 'ADD_CONNECTION'; sceneId: string; target: SceneConnection }
-  | { type: 'REMOVE_CONNECTION'; sceneId: string; targetSceneId: string }
-  | { type: 'UPDATE_CONNECTION_NOTE'; sceneId: string; targetSceneId: string; note: string }
+  | { type: 'ADD_CONNECTION'; sceneId: string; target: ConnectionTarget; note?: string }
+  | { type: 'REMOVE_CONNECTION'; sceneId: string; connectionId: string }
+  | { type: 'UPDATE_CONNECTION_NOTE'; sceneId: string; connectionId: string; note: string }
+  | { type: 'UPDATE_CONNECTION_TARGET'; sceneId: string; connectionId: string; target: ConnectionTarget }
   | { type: 'ADD_INDEX_ENTRY'; entry: IndexEntry }
   | { type: 'UPDATE_INDEX_ENTRY'; id: string; patch: Partial<IndexEntry> }
   | { type: 'DELETE_INDEX_ENTRY'; id: string }
@@ -60,7 +62,12 @@ type Action =
   | { type: 'REMOVE_SEE_ALSO_LINK'; aId: string; bId: string }
   | { type: 'SET_LINK_HINT_SEEN' }
   | { type: 'REPLACE_DATASET'; dataset: GrimoireDataset }
-  | { type: 'SET_LAST_EXPORTED'; timestamp: string }
+  | { type: 'SET_LAST_EXPORTED'; timestamp: string; hash: string }
+  | { type: 'ADD_CUSTOM_CARD'; projectId: string; label: string; layout: CustomCardDef['layout'] }
+  | { type: 'UPDATE_CUSTOM_CARD'; projectId: string; cardId: string; patch: Partial<Pick<CustomCardDef, 'label' | 'layout'>> }
+  | { type: 'DELETE_CUSTOM_CARD'; projectId: string; cardId: string }
+  | { type: 'SET_CARD_VISIBILITY'; projectId: string; cardKey: string; visible: boolean }
+  | { type: 'UPDATE_CUSTOM_CARD_CONTENT'; sceneId: string; cardId: string; value: string }
 
 function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
   switch (action.type) {
@@ -68,6 +75,8 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       const project: Project = {
         id: makeId(),
         title: action.title.trim(),
+        customCards: [],
+        cardVisibility: {},
         createdAt: nowIso(),
         updatedAt: nowIso(),
       }
@@ -104,7 +113,9 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
         time: '',
         lore: '',
         summary: '',
+        easterEggs: '',
         connections: [],
+        customCardContent: {},
         createdAt: nowIso(),
         updatedAt: nowIso(),
       }
@@ -169,9 +180,12 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
         ...state,
         scenes: state.scenes.map((s) => {
           if (s.id !== action.sceneId) return s
-          const exists = s.connections.some((c) => c.sceneId === action.target.sceneId)
+          // Only a real scene target can duplicate — every Unwritten Scene
+          // placeholder is its own distinct entry regardless of description.
+          const exists = action.target.sceneId !== null && s.connections.some((c) => c.sceneId === action.target.sceneId)
           if (exists) return s
-          return { ...s, connections: [...s.connections, action.target], updatedAt: nowIso() }
+          const connection = { id: makeId(), ...action.target, note: action.note || undefined }
+          return { ...s, connections: [...s.connections, connection], updatedAt: nowIso() }
         }),
       }
     }
@@ -182,7 +196,7 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
           s.id === action.sceneId
             ? {
                 ...s,
-                connections: s.connections.filter((c) => c.sceneId !== action.targetSceneId),
+                connections: s.connections.filter((c) => c.id !== action.connectionId),
                 updatedAt: nowIso(),
               }
             : s,
@@ -197,7 +211,29 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
             ? {
                 ...s,
                 connections: s.connections.map((c) =>
-                  c.sceneId === action.targetSceneId ? { ...c, note: action.note } : c,
+                  c.id === action.connectionId ? { ...c, note: action.note } : c,
+                ),
+                updatedAt: nowIso(),
+              }
+            : s,
+        ),
+      }
+    }
+    case 'UPDATE_CONNECTION_TARGET': {
+      // Converts an Unwritten Scene placeholder into a real scene link (or
+      // vice versa) in place — same `id`, same `note`, nothing to delete
+      // and recreate.
+      return {
+        ...state,
+        scenes: state.scenes.map((s) =>
+          s.id === action.sceneId
+            ? {
+                ...s,
+                connections: s.connections.map((c) =>
+                  // Rebuilt from scratch (not spread over `c`) so switching
+                  // target shape never leaves a stale sceneId/projectId/
+                  // unwrittenDescription behind from the previous shape.
+                  c.id === action.connectionId ? { id: c.id, note: c.note, ...action.target } : c,
                 ),
                 updatedAt: nowIso(),
               }
@@ -273,7 +309,74 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       return action.dataset
     }
     case 'SET_LAST_EXPORTED': {
-      return { ...state, meta: { ...state.meta, lastExportedAt: action.timestamp } }
+      return { ...state, meta: { ...state.meta, lastExportedAt: action.timestamp, lastExportedHash: action.hash } }
+    }
+    case 'ADD_CUSTOM_CARD': {
+      const card: CustomCardDef = { id: makeId(), label: action.label.trim(), layout: action.layout }
+      return {
+        ...state,
+        projects: state.projects.map((p) =>
+          p.id === action.projectId
+            ? { ...p, customCards: [...p.customCards, card], updatedAt: nowIso() }
+            : p,
+        ),
+      }
+    }
+    case 'UPDATE_CUSTOM_CARD': {
+      return {
+        ...state,
+        projects: state.projects.map((p) =>
+          p.id === action.projectId
+            ? {
+                ...p,
+                customCards: p.customCards.map((c) => (c.id === action.cardId ? { ...c, ...action.patch } : c)),
+                updatedAt: nowIso(),
+              }
+            : p,
+        ),
+      }
+    }
+    case 'DELETE_CUSTOM_CARD': {
+      // Only the card DEFINITION is removed — any content already written
+      // under this card's id in scene.customCardContent is left untouched
+      // (same "never cascade-delete underlying data" rule as hiding a card,
+      // or deleting an Index entry that scene text still links to).
+      return {
+        ...state,
+        projects: state.projects.map((p) =>
+          p.id === action.projectId
+            ? { ...p, customCards: p.customCards.filter((c) => c.id !== action.cardId), updatedAt: nowIso() }
+            : p,
+        ),
+      }
+    }
+    case 'SET_CARD_VISIBILITY': {
+      return {
+        ...state,
+        projects: state.projects.map((p) =>
+          p.id === action.projectId
+            ? {
+                ...p,
+                cardVisibility: { ...p.cardVisibility, [action.cardKey]: action.visible },
+                updatedAt: nowIso(),
+              }
+            : p,
+        ),
+      }
+    }
+    case 'UPDATE_CUSTOM_CARD_CONTENT': {
+      return {
+        ...state,
+        scenes: state.scenes.map((s) =>
+          s.id === action.sceneId
+            ? {
+                ...s,
+                customCardContent: { ...s.customCardContent, [action.cardId]: action.value },
+                updatedAt: nowIso(),
+              }
+            : s,
+        ),
+      }
     }
     default:
       return state

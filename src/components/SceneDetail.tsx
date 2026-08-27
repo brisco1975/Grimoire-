@@ -7,8 +7,8 @@ import EntryModal from './EntryModal'
 import LinkedText from './LinkedText'
 import Modal from './Modal'
 import { sceneHeading, groupMembers, type InsertPosition } from '../utils/tocOrdering'
-import { TEXT_CARDS_AFTER_CONNECTIONS, TEXT_CARDS_BEFORE_CONNECTIONS, type TextCardKey } from '../data/cards'
-import type { IndexEntry, Scene } from '../types'
+import { TEXT_CARDS, isCardVisible } from '../data/cards'
+import type { ConnectionTarget, IndexEntry, Scene, SceneConnection } from '../types'
 
 function TextCardButton({
   cardKey,
@@ -16,12 +16,14 @@ function TextCardButton({
   value,
   entries,
   onOpen,
+  fullWidth = false,
 }: {
-  cardKey: TextCardKey
+  cardKey: string
   label: string
   value: string
   entries: IndexEntry[]
   onOpen: () => void
+  fullWidth?: boolean
 }) {
   // Local, per-card expand toggle — lets the FULL card content show right
   // here in the main view (still colored, still brackets-hidden via
@@ -45,7 +47,7 @@ function TextCardButton({
           onOpen()
         }
       }}
-      className="text-left rounded-lg border border-inset bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors p-4 flex flex-col gap-1 cursor-pointer"
+      className={`text-left rounded-lg border border-inset bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors p-4 flex flex-col gap-1 cursor-pointer ${fullWidth ? 'sm:col-span-2' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="font-heading text-gold text-base tracking-wide uppercase">{label}</span>
@@ -88,11 +90,15 @@ function TextCardButton({
  */
 export default function SceneDetail({ projectId, scene }: { projectId: string; scene: Scene }) {
   const navigate = useNavigate()
-  const { dataset, dispatch } = useApp()
+  const { dataset, dispatch, getProject } = useApp()
+  const project = getProject(projectId)
+  const cardVisibility = useMemo(() => project?.cardVisibility ?? {}, [project])
+  const customCards = project?.customCards ?? []
 
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [pickingConnection, setPickingConnection] = useState(false)
+  const [editingConnectionTarget, setEditingConnectionTarget] = useState<SceneConnection | null>(null)
   const [markingWritten, setMarkingWritten] = useState(false)
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
@@ -102,16 +108,24 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
     [dataset.indexEntries, projectId],
   )
 
-  const connectionTargets = useMemo(() => {
-    return scene.connections.map((c) => {
-      const target = dataset.scenes.find((s) => s.id === c.sceneId)
-      return { connection: c, target }
-    })
+  const connectionRows = useMemo(() => {
+    return scene.connections.map((c) => ({
+      connection: c,
+      target: c.sceneId ? dataset.scenes.find((s) => s.id === c.sceneId) : undefined,
+    }))
   }, [scene, dataset.scenes])
 
-  const cardsBefore = TEXT_CARDS_BEFORE_CONNECTIONS.filter((c) => c.behaviors.includes(scene.behavior))
-  const cardsAfter = TEXT_CARDS_AFTER_CONNECTIONS.filter((c) => c.behaviors.includes(scene.behavior))
-  const showConnections = scene.behavior === 'scene'
+  const visibleBuiltIn = (key: string) => isCardVisible(cardVisibility, key)
+  const visibleCustom = (id: string) => isCardVisible(cardVisibility, id)
+
+  const compactCards = [
+    ...TEXT_CARDS.filter((c) => c.layout === 'compact' && c.behaviors.includes(scene.behavior) && visibleBuiltIn(c.key)),
+  ]
+  const compactCustomCards = customCards.filter((c) => c.layout === 'compact' && visibleCustom(c.id))
+  const easterEggsCard = TEXT_CARDS.find((c) => c.key === 'easterEggs')!
+  const showConnections = scene.behavior === 'scene' && visibleBuiltIn('connections')
+  const showEasterEggs = easterEggsCard.behaviors.includes(scene.behavior) && visibleBuiltIn('easterEggs')
+  const fullWidthCustomCards = customCards.filter((c) => c.layout === 'full-width' && visibleCustom(c.id))
   const isPlanned = scene.status === 'planned'
 
   return (
@@ -152,7 +166,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3 content-start items-start">
-        {cardsBefore.map(({ key, label }) => (
+        {compactCards.map(({ key, label }) => (
           <TextCardButton
             key={key}
             cardKey={key}
@@ -160,6 +174,17 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
             value={scene[key]}
             entries={projectEntries}
             onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${key}`)}
+          />
+        ))}
+
+        {compactCustomCards.map((card) => (
+          <TextCardButton
+            key={card.id}
+            cardKey={card.id}
+            label={card.label}
+            value={scene.customCardContent[card.id] ?? ''}
+            entries={projectEntries}
+            onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${card.id}`)}
           />
         ))}
 
@@ -175,14 +200,61 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                 + Add
               </button>
             </div>
-            {connectionTargets.length === 0 && (
+            {connectionRows.length === 0 && (
               <span className="text-parchment-muted text-sm italic">No connections yet.</span>
             )}
             <div className="flex flex-col gap-2">
-              {connectionTargets.map(({ connection, target }) =>
-                target ? (
+              {connectionRows.map(({ connection, target }) => {
+                if (connection.sceneId === null) {
+                  return (
+                    <div
+                      key={connection.id}
+                      className="rounded border border-dashed border-gold-dim bg-surface-2 px-3 py-2 flex flex-col gap-0.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gold text-sm font-medium">
+                          ✎ Unwritten: {connection.unwrittenDescription}
+                        </span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setEditingConnectionTarget(connection)}
+                            className="text-gold-dim hover:text-gold text-xs transition-colors"
+                          >
+                            Link scene…
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingNoteFor(connection.id)
+                              setNoteDraft(connection.note ?? '')
+                            }}
+                            className="text-gold-dim hover:text-gold text-xs transition-colors"
+                          >
+                            {connection.note ? 'Edit note' : '+ Note'}
+                          </button>
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            onClick={() =>
+                              dispatch({ type: 'REMOVE_CONNECTION', sceneId: scene.id, connectionId: connection.id })
+                            }
+                            className="text-parchment-muted hover:text-parchment cursor-pointer"
+                            aria-label="Remove connection"
+                          >
+                            ×
+                          </span>
+                        </div>
+                      </div>
+                      {connection.note && (
+                        <p className="text-parchment-muted text-sm m-0 whitespace-pre-wrap">{connection.note}</p>
+                      )}
+                    </div>
+                  )
+                }
+                return target ? (
                   <div
-                    key={connection.sceneId}
+                    key={connection.id}
                     className="rounded border border-link/60 bg-link/10 px-3 py-2 flex flex-col gap-0.5"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -197,7 +269,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                         <button
                           type="button"
                           onClick={() => {
-                            setEditingNoteFor(connection.sceneId)
+                            setEditingNoteFor(connection.id)
                             setNoteDraft(connection.note ?? '')
                           }}
                           className="text-link/80 hover:text-link text-xs transition-colors"
@@ -208,7 +280,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                           role="button"
                           tabIndex={-1}
                           onClick={() =>
-                            dispatch({ type: 'REMOVE_CONNECTION', sceneId: scene.id, targetSceneId: connection.sceneId })
+                            dispatch({ type: 'REMOVE_CONNECTION', sceneId: scene.id, connectionId: connection.id })
                           }
                           className="text-link/70 hover:text-link cursor-pointer"
                           aria-label="Remove connection"
@@ -223,7 +295,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                   </div>
                 ) : (
                   <div
-                    key={connection.sceneId}
+                    key={connection.id}
                     className="rounded border border-accent/60 bg-accent/10 px-3 py-2 flex items-center justify-between gap-2"
                     title="This connected scene was deleted — connection is broken and needs manual correction"
                   >
@@ -232,7 +304,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                       role="button"
                       tabIndex={-1}
                       onClick={() =>
-                        dispatch({ type: 'REMOVE_CONNECTION', sceneId: scene.id, targetSceneId: connection.sceneId })
+                        dispatch({ type: 'REMOVE_CONNECTION', sceneId: scene.id, connectionId: connection.id })
                       }
                       className="text-parchment-muted hover:text-parchment cursor-pointer"
                       aria-label="Remove broken connection"
@@ -240,20 +312,32 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                       ×
                     </span>
                   </div>
-                ),
-              )}
+                )
+              })}
             </div>
           </div>
         )}
 
-        {cardsAfter.map(({ key, label }) => (
+        {showEasterEggs && (
           <TextCardButton
-            key={key}
-            cardKey={key}
-            label={label}
-            value={scene[key]}
+            cardKey={easterEggsCard.key}
+            label={easterEggsCard.label}
+            value={scene.easterEggs}
             entries={projectEntries}
-            onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${key}`)}
+            fullWidth
+            onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${easterEggsCard.key}`)}
+          />
+        )}
+
+        {fullWidthCustomCards.map((card) => (
+          <TextCardButton
+            key={card.id}
+            cardKey={card.id}
+            label={card.label}
+            value={scene.customCardContent[card.id] ?? ''}
+            entries={projectEntries}
+            fullWidth
+            onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${card.id}`)}
           />
         ))}
       </div>
@@ -261,16 +345,20 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
       {editing && <EntryModal onClose={() => setEditing(false)} projectId={projectId} editingScene={scene} />}
 
       <ConnectionPicker
-        open={pickingConnection}
-        onClose={() => setPickingConnection(false)}
-        currentScene={scene}
-        onPick={(target, note) => {
-          dispatch({
-            type: 'ADD_CONNECTION',
-            sceneId: scene.id,
-            target: { sceneId: target.id, projectId: target.projectId, note: note || undefined },
-          })
+        open={pickingConnection || !!editingConnectionTarget}
+        onClose={() => {
           setPickingConnection(false)
+          setEditingConnectionTarget(null)
+        }}
+        currentScene={scene}
+        editingConnection={editingConnectionTarget ?? undefined}
+        onPick={(target: ConnectionTarget, note) => {
+          dispatch({ type: 'ADD_CONNECTION', sceneId: scene.id, target, note })
+          setPickingConnection(false)
+        }}
+        onUpdate={(connectionId, target: ConnectionTarget) => {
+          dispatch({ type: 'UPDATE_CONNECTION_TARGET', sceneId: scene.id, connectionId, target })
+          setEditingConnectionTarget(null)
         }}
       />
 
@@ -286,7 +374,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
             dispatch({
               type: 'UPDATE_CONNECTION_NOTE',
               sceneId: scene.id,
-              targetSceneId: editingNoteFor,
+              connectionId: editingNoteFor,
               note: noteDraft.trim(),
             })
             setEditingNoteFor(null)

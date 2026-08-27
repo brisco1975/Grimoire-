@@ -9,7 +9,7 @@
 // IndexEntry — populated only once the bracket-linking engine exists).
 // ─────────────────────────────────────────────────────────────────────────
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 export type IndexEntryType = 'person' | 'place' | 'thing'
 
@@ -44,12 +44,35 @@ export type SceneKind =
 /** Only meaningful when behavior === 'matter'. */
 export type MatterPosition = 'start' | 'end'
 
-/** A link from one scene to another. Cross-project links are allowed. */
-export interface SceneConnection {
-  sceneId: string
-  projectId: string
+/**
+ * What a connection points at: either a real, already-existing scene, or an
+ * "Unwritten Scene" placeholder — a free-text description of a scene the
+ * writer expects to write later. `sceneId`/`projectId` are null exactly
+ * when `unwrittenDescription` is set, and vice versa.
+ */
+export type ConnectionTarget =
+  | { sceneId: string; projectId: string; unwrittenDescription?: undefined }
+  | { sceneId: null; projectId: null; unwrittenDescription: string }
+
+/**
+ * A link from one scene to another (or to an as-yet-unwritten one). Cross-
+ * project links are allowed. `id` is the stable identity used for editing/
+ * removal — it's independent of `sceneId` because an Unwritten Scene
+ * placeholder has no sceneId to key off of, and a placeholder can later be
+ * converted in place (see UPDATE_CONNECTION_TARGET) without losing its note.
+ */
+export type SceneConnection = ConnectionTarget & {
+  id: string
   /** Optional free text describing why the two scenes are connected. */
   note?: string
+}
+
+/** One user-defined card, first-class alongside the built-in ones. */
+export interface CustomCardDef {
+  id: string
+  label: string
+  /** 'compact' joins the top grid; 'full-width' anchors to the bottom, like Connections. */
+  layout: 'compact' | 'full-width'
 }
 
 export interface Scene {
@@ -73,7 +96,11 @@ export interface Scene {
   lore: string
   /** Compressed briefing — also shown in the Table of Contents peek popup. */
   summary: string
+  /** Deliberate hidden references/callbacks/planted details — distinct from a plot Connection. */
+  easterEggs: string
   connections: SceneConnection[]
+  /** Free text for this project's custom cards, keyed by CustomCardDef.id. */
+  customCardContent: Record<string, string>
   createdAt: string
   updatedAt: string
 }
@@ -81,6 +108,15 @@ export interface Scene {
 export interface Project {
   id: string
   title: string
+  /** This project's user-defined cards — configured per project, not globally. */
+  customCards: CustomCardDef[]
+  /**
+   * Per-project on/off toggle for every card (built-in card key, 'connections',
+   * or a CustomCardDef id). A key absent from this map means the card is
+   * visible — only explicit `false` hides it. Hiding a card never deletes
+   * the underlying scene data; it only stops it from rendering.
+   */
+  cardVisibility: Record<string, boolean>
   createdAt: string
   updatedAt: string
 }
@@ -119,6 +155,12 @@ export interface GrimoireDataset {
   indexEntries: IndexEntry[]
   meta: {
     lastExportedAt: string | null
+    /**
+     * Content hash of the dataset at the last successful export — lets Export
+     * tell "nothing changed since last time" apart from "never exported",
+     * without keeping a whole duplicate copy of the data around.
+     */
+    lastExportedHash: string | null
     /** One-time dismissible onboarding hint for the [[ bracket-link syntax. */
     hasSeenLinkHint: boolean
   }
@@ -130,6 +172,6 @@ export function createEmptyDataset(): GrimoireDataset {
     projects: [],
     scenes: [],
     indexEntries: [],
-    meta: { lastExportedAt: null, hasSeenLinkHint: false },
+    meta: { lastExportedAt: null, lastExportedHash: null, hasSeenLinkHint: false },
   }
 }

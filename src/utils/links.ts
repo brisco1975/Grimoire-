@@ -113,18 +113,23 @@ export function toPlainDisplayText(raw: string): string {
  * always derived, never stored. This is the sole mechanism populating the
  * Index; nothing writes to IndexEntry.sceneIds anymore.
  */
+function containsLinkTo(value: string, entryId: string): boolean {
+  RAW_TOKEN_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = RAW_TOKEN_RE.exec(value))) {
+    if (m[1] === entryId) return true
+  }
+  return false
+}
+
 export function entryScenes(entry: IndexEntry, scenes: Scene[]): Scene[] {
   return scenes.filter((s) => {
     if (s.projectId !== entry.projectId) return false
-    return TEXT_CARDS.some((c) => {
-      const value = s[c.key]
-      RAW_TOKEN_RE.lastIndex = 0
-      let m: RegExpExecArray | null
-      while ((m = RAW_TOKEN_RE.exec(value))) {
-        if (m[1] === entry.id) return true
-      }
-      return false
-    })
+    if (TEXT_CARDS.some((c) => containsLinkTo(s[c.key], entry.id))) return true
+    // Custom cards are full first-class citizens — their free text
+    // participates in bracket-linking and Index auto-population exactly
+    // like a built-in card's does.
+    return Object.values(s.customCardContent ?? {}).some((value) => containsLinkTo(value, entry.id))
   })
 }
 
