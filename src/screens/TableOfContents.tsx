@@ -205,11 +205,11 @@ export default function TableOfContents() {
               <div className="flex flex-col gap-4">
                 {chapterGroups.map(({ chapter, scenes }, chapterIdx) => (
                   <div key={chapter.id}>
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <h3 className="font-heading text-parchment text-sm m-0 truncate">
+                    <div className="mb-2 pb-2 border-b border-inset">
+                      <h3 className="font-heading text-parchment text-base m-0 mb-1.5">
                         {chapterHeading(dataset.chapters, projectId, chapter)}
                       </h3>
-                      <div className="flex items-center gap-3 shrink-0 text-xs">
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs">
                         <button
                           type="button"
                           disabled={chapterIdx === 0}
