@@ -12,6 +12,7 @@ import {
 import {
   createEmptyDataset,
   SCHEMA_VERSION,
+  type Chapter,
   type ConnectionTarget,
   type CustomCardDef,
   type EntryBehavior,
@@ -25,7 +26,8 @@ import {
 } from '../types'
 import { loadDataset, saveDataset, migrateDataset } from './db'
 import { makeId, nowIso } from '../utils/id'
-import { computeInsertIndex, sceneGroupOf, swapScenePositions, type InsertPosition } from '../utils/tocOrdering'
+import { computeInsertIndex, groupMembers, sceneGroupOf, swapScenePositions, type InsertPosition } from '../utils/tocOrdering'
+import { projectChapters } from '../utils/chapters'
 
 type Action =
   | { type: 'ADD_PROJECT'; title: string }
@@ -68,6 +70,49 @@ type Action =
   | { type: 'DELETE_CUSTOM_CARD'; projectId: string; cardId: string }
   | { type: 'SET_CARD_VISIBILITY'; projectId: string; cardKey: string; visible: boolean }
   | { type: 'UPDATE_CUSTOM_CARD_CONTENT'; sceneId: string; cardId: string; value: string }
+  | { type: 'ADD_CHAPTER'; projectId: string; name?: string }
+  | { type: 'RENAME_CHAPTER'; id: string; name: string }
+  | { type: 'DELETE_CHAPTER'; id: string }
+  | { type: 'REORDER_CHAPTER'; id: string; projectId: string; direction: 'up' | 'down' }
+
+/** Ensures the project has at least one chapter, returning the LAST one's id (creating an unnamed one if none exist yet) plus the possibly-extended chapters array. */
+function ensureLastChapter(chapters: Chapter[], projectId: string): { chapterId: string; chapters: Chapter[] } {
+  const existing = projectChapters(chapters, projectId)
+  if (existing.length > 0) return { chapterId: existing[existing.length - 1].id, chapters }
+  const chapter: Chapter = { id: makeId(), projectId, name: '', createdAt: nowIso(), updatedAt: nowIso() }
+  return { chapterId: chapter.id, chapters: [...chapters, chapter] }
+}
+
+/** Same, but for the FIRST chapter — used when a scene is inserted at the very start of the regular group. */
+function ensureFirstChapter(chapters: Chapter[], projectId: string): { chapterId: string; chapters: Chapter[] } {
+  const existing = projectChapters(chapters, projectId)
+  if (existing.length > 0) return { chapterId: existing[0].id, chapters }
+  const chapter: Chapter = { id: makeId(), projectId, name: '', createdAt: nowIso(), updatedAt: nowIso() }
+  return { chapterId: chapter.id, chapters: [...chapters, chapter] }
+}
+
+/**
+ * Which chapter a regular-group scene should land in, given how it's being
+ * inserted/positioned — mirrors computeInsertIndex's own handling of the
+ * same InsertPosition: 'group-start' -> the project's first chapter,
+ * 'group-end' -> its last, {after: X} -> whatever chapter X is already in
+ * (falling back to the last chapter if X can't be found). Lazily creates a
+ * chapter if the project doesn't have one yet, exactly like the rest of
+ * this reducer already lazily creates whatever else a brand-new project
+ * needs on first use.
+ */
+function chapterIdForInsert(
+  chapters: Chapter[],
+  scenes: Scene[],
+  projectId: string,
+  position: InsertPosition,
+): { chapterId: string; chapters: Chapter[] } {
+  if (position === 'group-start') return ensureFirstChapter(chapters, projectId)
+  if (position === 'group-end') return ensureLastChapter(chapters, projectId)
+  const after = scenes.find((s) => s.id === position.after)
+  if (after?.chapterId) return { chapterId: after.chapterId, chapters }
+  return ensureLastChapter(chapters, projectId)
+}
 
 function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
   switch (action.type) {
@@ -94,6 +139,7 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       return {
         ...state,
         projects: state.projects.filter((p) => p.id !== action.id),
+        chapters: state.chapters.filter((c) => c.projectId !== action.id),
         scenes: state.scenes.filter((s) => s.projectId !== action.id),
         indexEntries: state.indexEntries.filter((e) => e.projectId !== action.id),
       }
@@ -114,16 +160,24 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
         lore: '',
         summary: '',
         easterEggs: '',
+        chapterId: null,
         connections: [],
         customCardContent: {},
         createdAt: nowIso(),
         updatedAt: nowIso(),
       }
       const group = sceneGroupOf(scene)
-      const insertIdx = computeInsertIndex(state.scenes, action.projectId, group, action.insertPosition ?? 'group-end')
+      const insertPosition = action.insertPosition ?? 'group-end'
+      let chapters = state.chapters
+      if (group === 'regular') {
+        const result = chapterIdForInsert(state.chapters, state.scenes, action.projectId, insertPosition)
+        scene.chapterId = result.chapterId
+        chapters = result.chapters
+      }
+      const insertIdx = computeInsertIndex(state.scenes, action.projectId, group, insertPosition)
       const scenes = [...state.scenes]
       scenes.splice(insertIdx, 0, scene)
-      return { ...state, scenes }
+      return { ...state, chapters, scenes }
     }
     case 'MOVE_ENTRY': {
       const scene = state.scenes.find((s) => s.id === action.id)
@@ -133,6 +187,19 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       const idx = siblings.findIndex((s) => s.id === scene.id)
       const neighbor = action.direction === 'up' ? siblings[idx - 1] : siblings[idx + 1]
       if (!neighbor) return state
+      if (group === 'regular' && neighbor.chapterId !== scene.chapterId) {
+        // Crossing into the adjacent chapter. Chapter order + within-chapter
+        // order together always match this project's regular-group array
+        // order block-by-block (every action here maintains that), so this
+        // scene is already sitting right at the boundary — no array move
+        // needed, just re-tag which chapter it belongs to.
+        return {
+          ...state,
+          scenes: state.scenes.map((s) =>
+            s.id === scene.id ? { ...s, chapterId: neighbor.chapterId, updatedAt: nowIso() } : s,
+          ),
+        }
+      }
       return { ...state, scenes: swapScenePositions(state.scenes, scene.id, neighbor.id) }
     }
     case 'REPOSITION_ENTRY': {
@@ -140,12 +207,20 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       if (!scene) return state
       const group = sceneGroupOf(scene)
       const withoutScene = state.scenes.filter((s) => s.id !== scene.id)
+      let chapters = state.chapters
+      let repositionedScene = scene
+      if (group === 'regular') {
+        const result = chapterIdForInsert(chapters, withoutScene, scene.projectId, action.insertPosition)
+        chapters = result.chapters
+        repositionedScene = { ...scene, chapterId: result.chapterId }
+      }
       const insertIdx = computeInsertIndex(withoutScene, scene.projectId, group, action.insertPosition)
       const scenes = [...withoutScene]
-      scenes.splice(insertIdx, 0, scene)
-      return { ...state, scenes }
+      scenes.splice(insertIdx, 0, repositionedScene)
+      return { ...state, chapters, scenes }
     }
     case 'FINALIZE_PLANNED_SCENE': {
+      let chapters = state.chapters
       let scenes = state.scenes.map((s) =>
         s.id === action.id ? { ...s, title: action.title.trim(), status: 'written' as const, updatedAt: nowIso() } : s,
       )
@@ -154,20 +229,57 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
         if (scene) {
           const group = sceneGroupOf(scene)
           const without = scenes.filter((s) => s.id !== scene.id)
+          let repositionedScene = scene
+          if (group === 'regular') {
+            const result = chapterIdForInsert(chapters, without, scene.projectId, action.insertPosition)
+            chapters = result.chapters
+            repositionedScene = { ...scene, chapterId: result.chapterId }
+          }
           const insertIdx = computeInsertIndex(without, scene.projectId, group, action.insertPosition)
           scenes = [...without]
-          scenes.splice(insertIdx, 0, scene)
+          scenes.splice(insertIdx, 0, repositionedScene)
         }
       }
-      return { ...state, scenes }
+      return { ...state, chapters, scenes }
     }
     case 'UPDATE_SCENE': {
-      return {
-        ...state,
-        scenes: state.scenes.map((s) =>
-          s.id === action.id ? { ...s, ...action.patch, updatedAt: nowIso() } : s,
-        ),
+      const current = state.scenes.find((s) => s.id === action.id)
+      if (!current) return state
+      const patched = { ...current, ...action.patch }
+      const oldGroup = sceneGroupOf(current)
+      const newGroup = sceneGroupOf(patched)
+
+      if (oldGroup === newGroup) {
+        // No group transition (the overwhelmingly common case — editing
+        // card text, a title, anything that isn't a behavior/kind change)
+        // — chapterId, if any, is left exactly as it was.
+        return {
+          ...state,
+          scenes: state.scenes.map((s) => (s.id === action.id ? { ...patched, updatedAt: nowIso() } : s)),
+        }
       }
+
+      if (newGroup !== 'regular') {
+        // Reclassified OUT of the regular group (e.g. a Scene retitled into
+        // a Prologue or a Matter kind) — Chapters don't apply to it anymore.
+        return {
+          ...state,
+          scenes: state.scenes.map((s) => (s.id === action.id ? { ...patched, chapterId: null, updatedAt: nowIso() } : s)),
+        }
+      }
+
+      // Newly entering the regular group (e.g. a written Prologue
+      // reclassified into a regular Scene) — it was never part of the
+      // regular-group array order before, so it lands at the end of it
+      // (same default as a freshly created scene), not wherever it
+      // happened to physically sit among prologues/matter entries.
+      const withoutScene = state.scenes.filter((s) => s.id !== action.id)
+      const { chapterId, chapters } = ensureLastChapter(state.chapters, current.projectId)
+      const updatedScene: Scene = { ...patched, chapterId, updatedAt: nowIso() }
+      const insertIdx = computeInsertIndex(withoutScene, current.projectId, 'regular', 'group-end')
+      const scenes = [...withoutScene]
+      scenes.splice(insertIdx, 0, updatedScene)
+      return { ...state, chapters, scenes }
     }
     case 'DELETE_SCENE': {
       // Connections in OTHER scenes pointing at this one are intentionally left
@@ -378,6 +490,90 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
         ),
       }
     }
+    case 'ADD_CHAPTER': {
+      const chapter: Chapter = {
+        id: makeId(),
+        projectId: action.projectId,
+        name: (action.name ?? '').trim(),
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      }
+      // Appended to the very end of the shared chapters array — cross-
+      // project order in that array is never meaningful (every consumer
+      // filters by projectId first), and appending at the absolute end
+      // guarantees this is the LAST chapter once filtered to this project,
+      // regardless of how other projects' chapters are interleaved.
+      return { ...state, chapters: [...state.chapters, chapter] }
+    }
+    case 'RENAME_CHAPTER': {
+      return {
+        ...state,
+        chapters: state.chapters.map((c) =>
+          c.id === action.id ? { ...c, name: action.name.trim(), updatedAt: nowIso() } : c,
+        ),
+      }
+    }
+    case 'DELETE_CHAPTER': {
+      // Enforced here, not just by the UI disabling the button — a chapter
+      // can never silently take its scenes down with it.
+      const hasScenes = state.scenes.some((s) => s.chapterId === action.id)
+      if (hasScenes) return state
+      return { ...state, chapters: state.chapters.filter((c) => c.id !== action.id) }
+    }
+    case 'REORDER_CHAPTER': {
+      const projectChs = projectChapters(state.chapters, action.projectId)
+      const idx = projectChs.findIndex((c) => c.id === action.id)
+      if (idx === -1) return state
+      const swapIdx = action.direction === 'up' ? idx - 1 : idx + 1
+      if (swapIdx < 0 || swapIdx >= projectChs.length) return state
+
+      const newChapterOrder = [...projectChs]
+      ;[newChapterOrder[idx], newChapterOrder[swapIdx]] = [newChapterOrder[swapIdx], newChapterOrder[idx]]
+
+      // Rewrite this project's chapters, in the new order, back into the
+      // exact slots they occupied in the shared global array — every other
+      // project's chapters stay exactly where they are.
+      const chapterSlots: number[] = []
+      state.chapters.forEach((c, i) => {
+        if (c.projectId === action.projectId) chapterSlots.push(i)
+      })
+      const chapters = [...state.chapters]
+      chapterSlots.forEach((slot, k) => {
+        chapters[slot] = newChapterOrder[k]
+      })
+
+      // Keep the flat scenes array's regular-group order in sync with the
+      // new chapter order — this is the invariant every other chapter/
+      // scene operation relies on: a project's regular-group array order
+      // always matches chapter order, one contiguous block per chapter.
+      // Rebuild it by flattening this project's regular scenes chapter by
+      // chapter in the NEW order (each chapter's own scenes keep their
+      // existing mutual order), then write that back into the exact slots
+      // this project's regular scenes occupied before.
+      const currentRegularOrder = groupMembers(state.scenes, action.projectId, 'regular')
+      const byChapter = new Map<string, Scene[]>()
+      for (const s of currentRegularOrder) {
+        const key = s.chapterId ?? ''
+        const arr = byChapter.get(key) ?? []
+        arr.push(s)
+        byChapter.set(key, arr)
+      }
+      const newRegularOrder = newChapterOrder.flatMap((c) => byChapter.get(c.id) ?? [])
+      // A scene with no valid chapterId at all shouldn't happen, but never
+      // silently drop one from the list — keep it, at the end.
+      const leftover = byChapter.get('') ?? []
+      const finalRegularOrder = [...newRegularOrder, ...leftover]
+      const sceneSlots: number[] = []
+      state.scenes.forEach((s, i) => {
+        if (s.projectId === action.projectId && sceneGroupOf(s) === 'regular') sceneSlots.push(i)
+      })
+      const scenes = [...state.scenes]
+      sceneSlots.forEach((slot, k) => {
+        scenes[slot] = finalRegularOrder[k]
+      })
+
+      return { ...state, chapters, scenes }
+    }
     default:
       return state
   }
@@ -513,6 +709,10 @@ function mergeDatasets(
       ...p,
       id: makeId(),
       title: `${p.title} (imported)`,
+    })),
+    chapters: mergeArrays(local.chapters, incoming.chapters, (c) => ({
+      ...c,
+      id: makeId(),
     })),
     scenes: mergeArrays(local.scenes, incoming.scenes, (s) => ({
       ...s,

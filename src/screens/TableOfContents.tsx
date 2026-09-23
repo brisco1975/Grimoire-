@@ -9,10 +9,78 @@ import EntryModal from '../components/EntryModal'
 import IndexFAB from '../components/IndexFAB'
 import SceneDetail from '../components/SceneDetail'
 import { GROUP_LABELS, groupMembers, sceneHeading, type TocGroup } from '../utils/tocOrdering'
+import { chapterHeading, groupScenesByChapter } from '../utils/chapters'
 import { useIsWide } from '../utils/breakpoint'
-import type { Scene } from '../types'
+import type { Chapter, Scene } from '../types'
 
 const GROUP_SEQUENCE: TocGroup[] = ['matter-start', 'prologue', 'regular', 'epilogue', 'matter-end']
+
+/** One scene row — shared by every group's list and by each chapter's own scene sub-list. Up/down always dispatch the same MOVE_ENTRY action; only which neighbor exists (and therefore whether the button is disabled) differs by caller. */
+function SceneRow({
+  scene,
+  scenes,
+  disableUp,
+  disableDown,
+  highlighted,
+  onOpen,
+  onMoveUp,
+  onMoveDown,
+}: {
+  scene: Scene
+  scenes: Scene[]
+  disableUp: boolean
+  disableDown: boolean
+  highlighted: boolean
+  onOpen: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+}) {
+  return (
+    <li>
+      <div
+        className={`w-full rounded border bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors flex items-stretch gap-1 ${
+          highlighted ? 'border-gold' : 'border-inset'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex-1 text-left px-4 py-3 flex items-center justify-between gap-3 min-w-0"
+        >
+          <span className="font-heading text-parchment truncate flex items-center gap-2">
+            {sceneHeading(scenes, scene)}
+            {scene.status === 'planned' && (
+              <span className="text-accent-bright text-xs uppercase tracking-wide border border-accent-bright rounded-full px-2 py-0.5 shrink-0">
+                Planned
+              </span>
+            )}
+          </span>
+          <span className="text-gold-dim text-lg shrink-0">›</span>
+        </button>
+        <div className="flex flex-col justify-center pr-2 shrink-0">
+          <button
+            type="button"
+            disabled={disableUp}
+            onClick={onMoveUp}
+            aria-label="Move up"
+            className="text-gold-dim hover:text-gold disabled:opacity-20 disabled:hover:text-gold-dim leading-none text-xs px-1"
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            disabled={disableDown}
+            onClick={onMoveDown}
+            aria-label="Move down"
+            className="text-gold-dim hover:text-gold disabled:opacity-20 disabled:hover:text-gold-dim leading-none text-xs px-1"
+          >
+            ▼
+          </button>
+        </div>
+      </div>
+    </li>
+  )
+}
 
 export default function TableOfContents() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -34,6 +102,18 @@ export default function TableOfContents() {
   const populatedGroups = grouped.filter((g) => g.items.length > 0)
   const showGroupHeaders = populatedGroups.length > 1
 
+  // Chapters only ever group the 'regular' bucket's scenes — Prologue,
+  // Epilogue, and Matter-type entries are entirely unaffected and keep
+  // rendering as a plain flat list below, exactly as before.
+  const regularScenes = useMemo(
+    () => (projectId ? groupMembers(dataset.scenes, projectId, 'regular') : []),
+    [dataset.scenes, projectId],
+  )
+  const { groups: chapterGroups, orphans: orphanScenes } = useMemo(
+    () => (projectId ? groupScenesByChapter(regularScenes, dataset.chapters, projectId) : { groups: [], orphans: [] }),
+    [regularScenes, dataset.chapters, projectId],
+  )
+
   const projectEntries = useMemo(
     () => dataset.indexEntries.filter((e) => e.projectId === projectId),
     [dataset.indexEntries, projectId],
@@ -46,6 +126,12 @@ export default function TableOfContents() {
   const [renameValue, setRenameValue] = useState(project?.title ?? '')
   const [confirmDeleteProject, setConfirmDeleteProject] = useState(false)
 
+  const [creatingChapter, setCreatingChapter] = useState(false)
+  const [newChapterName, setNewChapterName] = useState('')
+  const [renamingChapter, setRenamingChapter] = useState<Chapter | null>(null)
+  const [chapterRenameValue, setChapterRenameValue] = useState('')
+  const [deletingChapter, setDeletingChapter] = useState<Chapter | null>(null)
+
   const selectedSceneId = searchParams.get('scene')
   const selectedScene = useMemo(
     () => (selectedSceneId ? dataset.scenes.find((s) => s.id === selectedSceneId && s.projectId === projectId) : undefined),
@@ -54,6 +140,11 @@ export default function TableOfContents() {
 
   function selectInSpread(scene: Scene) {
     setSearchParams({ scene: scene.id })
+  }
+
+  function openScene(scene: Scene) {
+    if (isWide) selectInSpread(scene)
+    else setPeekScene(scene)
   }
 
   if (!project || !projectId) {
@@ -73,6 +164,24 @@ export default function TableOfContents() {
     setRenaming(false)
   }
 
+  function submitNewChapter(e: React.FormEvent) {
+    e.preventDefault()
+    dispatch({ type: 'ADD_CHAPTER', projectId: projectId!, name: newChapterName })
+    setNewChapterName('')
+    setCreatingChapter(false)
+  }
+
+  function submitChapterRename(e: React.FormEvent) {
+    e.preventDefault()
+    if (!renamingChapter) return
+    dispatch({ type: 'RENAME_CHAPTER', id: renamingChapter.id, name: chapterRenameValue })
+    setRenamingChapter(null)
+  }
+
+  const deletingChapterSceneCount = deletingChapter
+    ? dataset.scenes.filter((s) => s.chapterId === deletingChapter.id).length
+    : 0
+
   const totalEntries = populatedGroups.reduce((sum, g) => sum + g.items.length, 0)
 
   const listPane = (
@@ -91,53 +200,125 @@ export default function TableOfContents() {
                 {GROUP_LABELS[group]}
               </h2>
             )}
-            <ul className="list-none m-0 p-0 flex flex-col gap-2">
-              {items.map((scene, idx) => (
-                <li key={scene.id}>
-                  <div
-                    className={`w-full rounded border bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors flex items-stretch gap-1 ${
-                      isWide && selectedScene?.id === scene.id ? 'border-gold' : 'border-inset'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => (isWide ? selectInSpread(scene) : setPeekScene(scene))}
-                      className="flex-1 text-left px-4 py-3 flex items-center justify-between gap-3 min-w-0"
-                    >
-                      <span className="font-heading text-parchment truncate flex items-center gap-2">
-                        {sceneHeading(dataset.scenes, scene)}
-                        {scene.status === 'planned' && (
-                          <span className="text-accent-bright text-xs uppercase tracking-wide border border-accent-bright rounded-full px-2 py-0.5 shrink-0">
-                            Planned
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-gold-dim text-lg shrink-0">›</span>
-                    </button>
-                    <div className="flex flex-col justify-center pr-2 shrink-0">
-                      <button
-                        type="button"
-                        disabled={idx === 0}
-                        onClick={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'up' })}
-                        aria-label="Move up"
-                        className="text-gold-dim hover:text-gold disabled:opacity-20 disabled:hover:text-gold-dim leading-none text-xs px-1"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        type="button"
-                        disabled={idx === items.length - 1}
-                        onClick={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'down' })}
-                        aria-label="Move down"
-                        className="text-gold-dim hover:text-gold disabled:opacity-20 disabled:hover:text-gold-dim leading-none text-xs px-1"
-                      >
-                        ▼
-                      </button>
+
+            {group === 'regular' ? (
+              <div className="flex flex-col gap-4">
+                {chapterGroups.map(({ chapter, scenes }, chapterIdx) => (
+                  <div key={chapter.id}>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <h3 className="font-heading text-parchment text-sm m-0 truncate">
+                        {chapterHeading(dataset.chapters, projectId, chapter)}
+                      </h3>
+                      <div className="flex items-center gap-3 shrink-0 text-xs">
+                        <button
+                          type="button"
+                          disabled={chapterIdx === 0}
+                          onClick={() => dispatch({ type: 'REORDER_CHAPTER', id: chapter.id, projectId, direction: 'up' })}
+                          aria-label="Move chapter up"
+                          className="text-gold-dim hover:text-gold disabled:opacity-20 disabled:hover:text-gold-dim leading-none px-1"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          disabled={chapterIdx === chapterGroups.length - 1}
+                          onClick={() => dispatch({ type: 'REORDER_CHAPTER', id: chapter.id, projectId, direction: 'down' })}
+                          aria-label="Move chapter down"
+                          className="text-gold-dim hover:text-gold disabled:opacity-20 disabled:hover:text-gold-dim leading-none px-1"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRenamingChapter(chapter)
+                            setChapterRenameValue(chapter.name)
+                          }}
+                          className="text-gold-dim hover:text-gold transition-colors"
+                        >
+                          Rename Chapter
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingChapter(chapter)}
+                          className="text-accent-bright hover:text-accent transition-colors"
+                        >
+                          Delete Chapter
+                        </button>
+                      </div>
                     </div>
+
+                    {scenes.length > 0 ? (
+                      <>
+                        <div className="text-parchment-muted text-xs uppercase tracking-wide mb-1.5 pl-1">Scenes:</div>
+                        <ul className="list-none m-0 p-0 flex flex-col gap-2">
+                          {scenes.map((scene) => {
+                            const globalIdx = regularScenes.findIndex((s) => s.id === scene.id)
+                            return (
+                              <SceneRow
+                                key={scene.id}
+                                scene={scene}
+                                scenes={dataset.scenes}
+                                disableUp={globalIdx === 0}
+                                disableDown={globalIdx === regularScenes.length - 1}
+                                highlighted={isWide && selectedScene?.id === scene.id}
+                                onOpen={() => openScene(scene)}
+                                onMoveUp={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'up' })}
+                                onMoveDown={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'down' })}
+                              />
+                            )
+                          })}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="text-parchment-muted text-xs italic pl-1 m-0">
+                        No scenes yet — move one in with its ▲/▼ controls, or add a new entry below.
+                      </p>
+                    )}
                   </div>
-                </li>
-              ))}
-            </ul>
+                ))}
+
+                {orphanScenes.length > 0 && (
+                  <div>
+                    <h3 className="font-heading text-accent-bright text-sm m-0 mb-1.5">Unassigned</h3>
+                    <ul className="list-none m-0 p-0 flex flex-col gap-2">
+                      {orphanScenes.map((scene) => {
+                        const globalIdx = regularScenes.findIndex((s) => s.id === scene.id)
+                        return (
+                          <SceneRow
+                            key={scene.id}
+                            scene={scene}
+                            scenes={dataset.scenes}
+                            disableUp={globalIdx === 0}
+                            disableDown={globalIdx === regularScenes.length - 1}
+                            highlighted={isWide && selectedScene?.id === scene.id}
+                            onOpen={() => openScene(scene)}
+                            onMoveUp={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'up' })}
+                            onMoveDown={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'down' })}
+                          />
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <ul className="list-none m-0 p-0 flex flex-col gap-2">
+                {items.map((scene, idx) => (
+                  <SceneRow
+                    key={scene.id}
+                    scene={scene}
+                    scenes={dataset.scenes}
+                    disableUp={idx === 0}
+                    disableDown={idx === items.length - 1}
+                    highlighted={isWide && selectedScene?.id === scene.id}
+                    onOpen={() => openScene(scene)}
+                    onMoveUp={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'up' })}
+                    onMoveDown={() => dispatch({ type: 'MOVE_ENTRY', id: scene.id, direction: 'down' })}
+                  />
+                ))}
+              </ul>
+            )}
           </div>
         ))}
       </div>
@@ -162,6 +343,13 @@ export default function TableOfContents() {
           className="w-full text-left rounded border border-dashed border-accent-bright text-accent-bright hover:bg-surface transition-colors px-4 py-3"
         >
           + Plan Next Scene
+        </button>
+        <button
+          type="button"
+          onClick={() => setCreatingChapter(true)}
+          className="w-full text-left rounded border border-dashed border-gold-dim text-gold hover:bg-surface transition-colors px-4 py-3"
+        >
+          + New Chapter
         </button>
       </div>
     </div>
@@ -284,6 +472,108 @@ export default function TableOfContents() {
           </div>
         </form>
       </Modal>
+
+      {/* New chapter modal */}
+      <Modal open={creatingChapter} onClose={() => setCreatingChapter(false)} title="New Chapter">
+        <form onSubmit={submitNewChapter}>
+          <label className="block text-sm text-parchment-muted mb-2" htmlFor="new-chapter-name">
+            Name (optional)
+          </label>
+          <input
+            id="new-chapter-name"
+            autoFocus
+            value={newChapterName}
+            onChange={(e) => setNewChapterName(e.target.value)}
+            placeholder="e.g. The Beginning"
+            className="w-full rounded border border-inset bg-canvas text-parchment px-3 py-2 mb-5 focus:border-gold outline-none"
+          />
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setCreatingChapter(false)}
+              className="px-4 py-2 rounded border border-inset text-parchment-muted hover:text-parchment hover:border-gold-dim transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded bg-accent hover:bg-accent-bright text-parchment font-heading tracking-wide transition-colors"
+            >
+              Create
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Rename chapter modal — addable/editable/removable at any time, same as a scene title. */}
+      <Modal open={!!renamingChapter} onClose={() => setRenamingChapter(null)} title="Rename Chapter">
+        <form onSubmit={submitChapterRename}>
+          <label className="block text-sm text-parchment-muted mb-2" htmlFor="chapter-rename">
+            Name (leave blank for none)
+          </label>
+          <input
+            id="chapter-rename"
+            autoFocus
+            value={chapterRenameValue}
+            onChange={(e) => setChapterRenameValue(e.target.value)}
+            placeholder="e.g. The Beginning"
+            className="w-full rounded border border-inset bg-canvas text-parchment px-3 py-2 mb-5 focus:border-gold outline-none"
+          />
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setRenamingChapter(null)}
+              className="px-4 py-2 rounded border border-inset text-parchment-muted hover:text-parchment hover:border-gold-dim transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded bg-accent hover:bg-accent-bright text-parchment font-heading tracking-wide transition-colors"
+            >
+              Save
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Deleting a non-empty chapter is blocked outright — its scenes are
+          never silently destroyed. Move them into another chapter first
+          with their own ▲/▼ controls (the same cross-chapter move used for
+          any other reordering), then delete becomes available. */}
+      <Modal
+        open={!!deletingChapter && deletingChapterSceneCount > 0}
+        onClose={() => setDeletingChapter(null)}
+        title="Chapter Not Empty"
+      >
+        <p className="text-parchment mb-5">
+          "{deletingChapter ? chapterHeading(dataset.chapters, projectId, deletingChapter) : ''}" still has{' '}
+          <strong>{deletingChapterSceneCount}</strong> scene{deletingChapterSceneCount === 1 ? '' : 's'}. Move{' '}
+          {deletingChapterSceneCount === 1 ? 'it' : 'them'} into another chapter first — using that scene's own ▲/▼
+          controls to cross the chapter boundary — then this chapter can be deleted.
+        </p>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setDeletingChapter(null)}
+            className="px-4 py-2 rounded bg-accent hover:bg-accent-bright text-parchment font-heading tracking-wide transition-colors"
+          >
+            Got it
+          </button>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deletingChapter && deletingChapterSceneCount === 0}
+        title="Delete this chapter?"
+        message={`"${deletingChapter ? chapterHeading(dataset.chapters, projectId, deletingChapter) : ''}" is empty and will be permanently deleted. This cannot be undone.`}
+        confirmLabel="Delete Chapter"
+        onCancel={() => setDeletingChapter(null)}
+        onConfirm={() => {
+          if (deletingChapter) dispatch({ type: 'DELETE_CHAPTER', id: deletingChapter.id })
+          setDeletingChapter(null)
+        }}
+      />
 
       <ConfirmDialog
         open={confirmDeleteProject}

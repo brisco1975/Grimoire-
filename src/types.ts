@@ -9,7 +9,7 @@
 // IndexEntry — populated only once the bracket-linking engine exists).
 // ─────────────────────────────────────────────────────────────────────────
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 export type IndexEntryType = 'person' | 'place' | 'thing'
 
@@ -75,6 +75,24 @@ export interface CustomCardDef {
   layout: 'compact' | 'full-width'
 }
 
+/**
+ * A grouping container that sits between a Project and its regular numbered
+ * Scene entries. Chapter NUMBER is never stored — like every other position
+ * marker in this schema, it's live-derived from this chapter's index among
+ * its project's chapters (see utils/chapters.ts). Only regular-group scenes
+ * (kind: scene/interlude/custom-scene) ever belong to a chapter — Prologue,
+ * Epilogue, and Matter-type entries are untouched by this feature and never
+ * reference one (see Scene.chapterId).
+ */
+export interface Chapter {
+  id: string
+  projectId: string
+  /** Empty string displays as "Chapter N" with no dash/name. */
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Scene {
   id: string
   projectId: string
@@ -98,6 +116,16 @@ export interface Scene {
   summary: string
   /** Deliberate hidden references/callbacks/planted details — distinct from a plot Connection. */
   easterEggs: string
+  /**
+   * Which Chapter this scene belongs to — only ever set for regular-group
+   * scenes (kind: scene/interlude/custom-scene); always null for Prologue,
+   * Epilogue, and Matter-type entries, which Chapters don't group. Order
+   * within/across chapters is still the flat array order among this
+   * project's regular-group scenes (see utils/tocOrdering.ts) — a chapter
+   * is a display grouping over that existing order, not a second ordering
+   * axis, so every scene's global position number keeps working unchanged.
+   */
+  chapterId: string | null
   connections: SceneConnection[]
   /** Free text for this project's custom cards, keyed by CustomCardDef.id. */
   customCardContent: Record<string, string>
@@ -151,6 +179,7 @@ export interface IndexEntry {
 export interface GrimoireDataset {
   schemaVersion: number
   projects: Project[]
+  chapters: Chapter[]
   scenes: Scene[]
   indexEntries: IndexEntry[]
   meta: {
@@ -170,6 +199,7 @@ export function createEmptyDataset(): GrimoireDataset {
   return {
     schemaVersion: SCHEMA_VERSION,
     projects: [],
+    chapters: [],
     scenes: [],
     indexEntries: [],
     meta: { lastExportedAt: null, lastExportedHash: null, hasSeenLinkHint: false },

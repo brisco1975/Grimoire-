@@ -1,6 +1,16 @@
 import { get, set } from 'idb-keyval'
-import { createEmptyDataset, SCHEMA_VERSION, type CustomCardDef, type GrimoireDataset, type Project, type Scene, type SceneConnection } from '../types'
+import {
+  createEmptyDataset,
+  SCHEMA_VERSION,
+  type Chapter,
+  type CustomCardDef,
+  type GrimoireDataset,
+  type Project,
+  type Scene,
+  type SceneConnection,
+} from '../types'
 import { makeId } from '../utils/id'
+import { sceneGroupOf } from '../utils/tocOrdering'
 
 const STORAGE_KEY = 'grimoire-dataset-v1'
 
@@ -47,6 +57,17 @@ function migrateConnections(raw: unknown): SceneConnection[] {
   })
 }
 
+function migrateChapters(raw: unknown): Chapter[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as Array<Record<string, unknown>>).map((c) => ({
+    id: c.id as string,
+    projectId: c.projectId as string,
+    name: (c.name as string) ?? '',
+    createdAt: (c.createdAt as string) ?? new Date().toISOString(),
+    updatedAt: (c.updatedAt as string) ?? new Date().toISOString(),
+  }))
+}
+
 function migrateProjects(raw: unknown): Project[] {
   if (!Array.isArray(raw)) return []
   return (raw as Array<Record<string, unknown>>).map((p) => ({
@@ -85,6 +106,17 @@ function migrateProjects(raw: unknown): Project[] {
  * null, unwrittenDescription set) — no pre-existing connection was ever a
  * placeholder, so old ones migrate straight across unchanged apart from
  * gaining an id. Also added meta.lastExportedHash (defaults null).
+ *
+ * v4 -> v5: added Chapter as a grouping container over regular-group scenes
+ * (dataset.chapters, Scene.chapterId — Prologue/Epilogue/Matter-type scenes
+ * never get one). Any regular-group scene that comes out of this migration
+ * without a chapterId pointing at a real chapter in the same project (which
+ * is EVERY regular scene in pre-v5 data, since chapters didn't exist yet)
+ * is collected — preserving its existing relative order — into one new
+ * trailing "Chapter 1" (unnamed) per affected project, so nothing needs
+ * manual re-entry and no scene numbers move. A v5+ export/import round-trip
+ * with intact chapter data passes straight through this same pass with
+ * nothing left over to collect.
  */
 export function migrateDataset(raw: unknown): GrimoireDataset {
   if (!raw || typeof raw !== 'object') return createEmptyDataset()
@@ -131,6 +163,11 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
       lore: (s.lore as string) ?? '',
       summary: (s.summary as string) ?? '',
       easterEggs: (s.easterEggs as string) ?? '',
+      // Validated against real, same-project chapters (and defaulted for
+      // any regular-group scene left without one) once `chapters` itself
+      // has been migrated below — raw pass-through here, just so the value
+      // survives this map at all.
+      chapterId: typeof s.chapterId === 'string' ? s.chapterId : null,
       connections: migrateConnections(s.connections),
       customCardContent:
         s.customCardContent && typeof s.customCardContent === 'object'
@@ -160,6 +197,43 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
     }
   }
 
+  // Chapters: migrate whatever was actually exported, then sweep every
+  // regular-group scene that doesn't already point at a real chapter in
+  // its own project — this is EVERY regular scene in pre-v5 data, since
+  // chapters didn't exist yet — into one new trailing "Chapter 1" (unnamed)
+  // per affected project, preserving each project's existing scene order
+  // exactly. A clean v5+ round-trip leaves nothing for this sweep to do.
+  const migratedChapters = migrateChapters(d.chapters)
+  const chaptersByProject = new Map<string, Chapter[]>()
+  for (const c of migratedChapters) {
+    const arr = chaptersByProject.get(c.projectId) ?? []
+    arr.push(c)
+    chaptersByProject.set(c.projectId, arr)
+  }
+  const orphansByProject = new Map<string, Scene[]>()
+  for (const s of orderedScenes) {
+    if (sceneGroupOf(s) !== 'regular') continue
+    const validChapter = s.chapterId && chaptersByProject.get(s.projectId)?.some((c) => c.id === s.chapterId)
+    if (!validChapter) {
+      const arr = orphansByProject.get(s.projectId) ?? []
+      arr.push(s)
+      orphansByProject.set(s.projectId, arr)
+    }
+  }
+  const defaultChapters: Chapter[] = []
+  for (const [projectId, orphanScenes] of orphansByProject) {
+    const chapter: Chapter = {
+      id: makeId(),
+      projectId,
+      name: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    defaultChapters.push(chapter)
+    for (const s of orphanScenes) s.chapterId = chapter.id
+  }
+  const chapters = [...migratedChapters, ...defaultChapters]
+
   const rawIndexEntries: Array<Record<string, unknown>> = Array.isArray(d.indexEntries)
     ? (d.indexEntries as Array<Record<string, unknown>>)
     : []
@@ -168,6 +242,7 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
   return {
     schemaVersion: SCHEMA_VERSION,
     projects: Array.isArray(d.projects) ? migrateProjects(d.projects) : empty.projects,
+    chapters,
     scenes: orderedScenes,
     indexEntries: rawIndexEntries.map((e) => ({
       id: e.id as string,

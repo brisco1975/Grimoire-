@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.2.0'
+export const APP_VERSION = '2.3.0'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,19 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.3.0',
+    date: '2026-09-23',
+    changes: [
+      'Added Chapters — a real grouping level between a project and its Scenes, with its own auto-numbering, an optional name (addable/editable/removable any time), and manual reordering. Scene numbers stay global and continuous across chapters, exactly as before.',
+      '+ New Chapter on the Table of Contents; new scenes land in the most recent chapter by default',
+      "Scenes can be moved between chapters with the exact same ▲/▼ controls already used to reorder them — moving past a chapter's first or last scene now crosses into the neighboring chapter",
+      "Deleting a chapter is blocked while it still has scenes, so a chapter can never silently take its scenes with it — move them to another chapter first",
+      'Existing projects were automatically wrapped into a single "Chapter 1" on upgrade, preserving every scene\'s order and number exactly as it was — Prologue, Epilogue, and Matter-type entries are entirely unaffected by this change',
+      'Export/Import now carries full chapter structure — names, order, and each scene\'s chapter — with the same conflict-by-conflict review as everything else',
+      'Version History now shows the most recent versions by default, with a "Show earlier versions" toggle instead of one long unbroken list',
+    ],
+  },
   {
     version: '2.2.0',
     date: '2026-08-27',

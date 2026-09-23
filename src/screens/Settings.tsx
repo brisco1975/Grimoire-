@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp, type ConflictResolutions, type ItemResolution } from '../store/AppContext'
-import { SCHEMA_VERSION, type GrimoireDataset, type IndexEntry, type Project, type Scene } from '../types'
+import { SCHEMA_VERSION, type Chapter, type GrimoireDataset, type IndexEntry, type Project, type Scene } from '../types'
 import AppHeader from '../components/AppHeader'
 import Modal from '../components/Modal'
 import { APP_VERSION, CHANGELOG } from '../data/changelog'
@@ -53,12 +53,12 @@ function formatTimestamp(iso: string | null): string {
 // (see the Import Data modal below).
 // ─────────────────────────────────────────────────────────────────────────
 
-type ConflictKind = 'project' | 'scene' | 'indexEntry'
+type ConflictKind = 'project' | 'chapter' | 'scene' | 'indexEntry'
 interface ConflictItem {
   kind: ConflictKind
   id: string
-  local: Project | Scene | IndexEntry
-  incoming: Project | Scene | IndexEntry
+  local: Project | Chapter | Scene | IndexEntry
+  incoming: Project | Chapter | Scene | IndexEntry
 }
 
 const SCENE_TEXT_FIELDS = new Set(['characters', 'actions', 'setting', 'time', 'lore', 'summary', 'easterEggs'])
@@ -96,15 +96,17 @@ function truncate(text: string, max = 220): string {
 /** Fields that actually differ between the two versions of one conflicting item, as plain readable text. */
 function diffFields(
   kind: ConflictKind,
-  local: Project | Scene | IndexEntry,
-  incoming: Project | Scene | IndexEntry,
+  local: Project | Chapter | Scene | IndexEntry,
+  incoming: Project | Chapter | Scene | IndexEntry,
 ): { label: string; local: string; incoming: string }[] {
   const keys: string[] =
     kind === 'project'
       ? ['title']
-      : kind === 'scene'
-        ? ['title', 'status', 'characters', 'actions', 'setting', 'time', 'lore', 'summary', 'easterEggs']
-        : ['name', 'type', 'aliases', 'seeAlso']
+      : kind === 'chapter'
+        ? ['name']
+        : kind === 'scene'
+          ? ['title', 'status', 'characters', 'actions', 'setting', 'time', 'lore', 'summary', 'easterEggs']
+          : ['name', 'type', 'aliases', 'seeAlso']
 
   const diffs: { label: string; local: string; incoming: string }[] = []
   for (const key of keys) {
@@ -117,14 +119,18 @@ function diffFields(
   return diffs
 }
 
-function labelFor(kind: ConflictKind, item: Project | Scene | IndexEntry): string {
+function labelFor(kind: ConflictKind, item: Project | Chapter | Scene | IndexEntry): string {
   if (kind === 'project') return (item as Project).title || 'Untitled project'
+  if (kind === 'chapter') return (item as Chapter).name || 'Unnamed chapter'
   if (kind === 'scene') return (item as Scene).title || 'Untitled scene'
   return (item as IndexEntry).name || 'Untitled entry'
 }
 
 function kindLabel(kind: ConflictKind): string {
-  return kind === 'project' ? 'Project' : kind === 'scene' ? 'Scene' : 'Index entry'
+  if (kind === 'project') return 'Project'
+  if (kind === 'chapter') return 'Chapter'
+  if (kind === 'scene') return 'Scene'
+  return 'Index entry'
 }
 
 export default function Settings() {
@@ -141,6 +147,7 @@ export default function Settings() {
     data: GrimoireDataset
     conflicts: ConflictItem[]
     newProjects: number
+    newChapters: number
     newScenes: number
     newIndexEntries: number
     hasLocalData: boolean
@@ -243,15 +250,18 @@ export default function Settings() {
           dataset.projects.length > 0 || dataset.scenes.length > 0 || dataset.indexEntries.length > 0
 
         const localProjects = new Map(dataset.projects.map((p) => [p.id, p]))
+        const localChapters = new Map(dataset.chapters.map((c) => [c.id, c]))
         const localScenes = new Map(dataset.scenes.map((s) => [s.id, s]))
         const localIndexEntries = new Map(dataset.indexEntries.map((e) => [e.id, e]))
 
         const incomingProjects: Project[] = Array.isArray(parsed.projects) ? parsed.projects : []
+        const incomingChapters: Chapter[] = Array.isArray(parsed.chapters) ? parsed.chapters : []
         const incomingScenes: Scene[] = Array.isArray(parsed.scenes) ? parsed.scenes : []
         const incomingIndexEntries: IndexEntry[] = Array.isArray(parsed.indexEntries) ? parsed.indexEntries : []
 
         const conflicts: ConflictItem[] = []
         let newProjects = 0
+        let newChapters = 0
         let newScenes = 0
         let newIndexEntries = 0
 
@@ -259,6 +269,11 @@ export default function Settings() {
           const existing = localProjects.get(p.id)
           if (!existing) newProjects++
           else if (JSON.stringify(existing) !== JSON.stringify(p)) conflicts.push({ kind: 'project', id: p.id, local: existing, incoming: p })
+        }
+        for (const c of incomingChapters) {
+          const existing = localChapters.get(c.id)
+          if (!existing) newChapters++
+          else if (JSON.stringify(existing) !== JSON.stringify(c)) conflicts.push({ kind: 'chapter', id: c.id, local: existing, incoming: c })
         }
         for (const s of incomingScenes) {
           const existing = localScenes.get(s.id)
@@ -283,6 +298,7 @@ export default function Settings() {
           data: parsed as GrimoireDataset,
           conflicts,
           newProjects,
+          newChapters,
           newScenes,
           newIndexEntries,
           hasLocalData,
@@ -298,7 +314,8 @@ export default function Settings() {
     if (!pendingImport) return
     importDataset(pendingImport.data, 'merge', conflictChoices)
     setImportSuccess(
-      `Import complete — ${pendingImport.newProjects} new project(s), ${pendingImport.newScenes} new scene(s), ` +
+      `Import complete — ${pendingImport.newProjects} new project(s), ${pendingImport.newChapters} new chapter(s), ` +
+        `${pendingImport.newScenes} new scene(s), ` +
         `${pendingImport.newIndexEntries} new Index entr${pendingImport.newIndexEntries === 1 ? 'y' : 'ies'}` +
         `${pendingImport.conflicts.length ? `, ${pendingImport.conflicts.length} conflict(s) resolved` : ''}.`,
     )
@@ -310,7 +327,8 @@ export default function Settings() {
     if (!pendingImport) return
     importDataset(pendingImport.data, 'replace')
     setImportSuccess(
-      `Import complete — restored ${pendingImport.newProjects} project(s) and ${pendingImport.newScenes} scene(s).`,
+      `Import complete — restored ${pendingImport.newProjects} project(s), ${pendingImport.newChapters} chapter(s), ` +
+        `and ${pendingImport.newScenes} scene(s).`,
     )
     setPendingImport(null)
     setConflictChoices({})
@@ -328,6 +346,11 @@ export default function Settings() {
   }
 
   const lastExported = useMemo(() => formatTimestamp(dataset.meta.lastExportedAt), [dataset.meta.lastExportedAt])
+
+  const RECENT_VERSIONS_SHOWN = 4
+  const [showAllVersions, setShowAllVersions] = useState(false)
+  const visibleChangelog = showAllVersions ? CHANGELOG : CHANGELOG.slice(0, RECENT_VERSIONS_SHOWN)
+  const hiddenVersionCount = CHANGELOG.length - RECENT_VERSIONS_SHOWN
 
   return (
     <div className="flex-1 flex flex-col">
@@ -393,7 +416,7 @@ export default function Settings() {
         <section className="rounded-lg border border-inset bg-surface p-4">
           <h2 className="font-heading text-gold text-lg m-0 mb-3">Version History</h2>
           <div className="flex flex-col gap-4">
-            {CHANGELOG.map((entry) => (
+            {visibleChangelog.map((entry) => (
               <div key={entry.version}>
                 <div className="font-heading text-gold text-sm">
                   v{entry.version} <span className="text-parchment-muted font-body">— {entry.date}</span>
@@ -406,6 +429,15 @@ export default function Settings() {
               </div>
             ))}
           </div>
+          {hiddenVersionCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllVersions((v) => !v)}
+              className="mt-4 text-gold-dim hover:text-gold text-sm transition-colors"
+            >
+              {showAllVersions ? '‹ Show fewer' : `Show ${hiddenVersionCount} earlier version${hiddenVersionCount === 1 ? '' : 's'} …`}
+            </button>
+          )}
         </section>
 
         <p className="text-parchment-muted text-xs text-center pb-6">© 2026 BNS. All rights reserved.</p>
@@ -426,6 +458,7 @@ export default function Settings() {
               <>
                 <p className="text-parchment mb-4">
                   This will restore <strong>{pendingImport.newProjects}</strong> project(s),{' '}
+                  <strong>{pendingImport.newChapters}</strong> chapter(s),{' '}
                   <strong>{pendingImport.newScenes}</strong> scene(s), and{' '}
                   <strong>{pendingImport.newIndexEntries}</strong> Index entr
                   {pendingImport.newIndexEntries === 1 ? 'y' : 'ies'} to this fresh install.
@@ -451,6 +484,7 @@ export default function Settings() {
               <>
                 <p className="text-parchment mb-4">
                   Found <strong>{pendingImport.newProjects}</strong> new project(s),{' '}
+                  <strong>{pendingImport.newChapters}</strong> new chapter(s),{' '}
                   <strong>{pendingImport.newScenes}</strong> new scene(s), and{' '}
                   <strong>{pendingImport.newIndexEntries}</strong> new Index entr
                   {pendingImport.newIndexEntries === 1 ? 'y' : 'ies'}. Nothing here conflicts with what's already on
@@ -476,7 +510,8 @@ export default function Settings() {
             ) : (
               <>
                 <p className="text-parchment mb-1">
-                  Found <strong>{pendingImport.newProjects}</strong> new project(s) and{' '}
+                  Found <strong>{pendingImport.newProjects}</strong> new project(s),{' '}
+                  <strong>{pendingImport.newChapters}</strong> new chapter(s), and{' '}
                   <strong>{pendingImport.newScenes}</strong> new scene(s) — those will be added automatically.
                 </p>
                 <p className="text-parchment mb-4">
