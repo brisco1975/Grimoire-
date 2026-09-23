@@ -3,6 +3,7 @@ import { useApp } from '../store/AppContext'
 import { MATTER_PRESETS, SCENE_PRESETS } from '../data/presets'
 import type { EntryBehavior, MatterPosition, Scene, SceneKind } from '../types'
 import { groupMembers, sceneHeading, type InsertPosition } from '../utils/tocOrdering'
+import { chapterHeading, projectChapters } from '../utils/chapters'
 import Modal from './Modal'
 
 const REGULAR_SCENE_KINDS: SceneKind[] = ['scene', 'interlude', 'custom-scene']
@@ -42,6 +43,22 @@ export default function EntryModal({
     () => groupMembers(dataset.scenes, projectId, 'regular'),
     [dataset.scenes, projectId],
   )
+
+  // Which chapter each Position option actually lands in — "At the end"
+  // and "After: X" both keep the new entry in a specific chapter (the
+  // project's last one, or whichever chapter X is already in), and that
+  // isn't obvious from the option text alone once more than one chapter
+  // exists. Labeling each option disambiguates "at the end of the book"
+  // from "right after this one scene, wherever its chapter is."
+  const projectChs = useMemo(() => projectChapters(dataset.chapters, projectId), [dataset.chapters, projectId])
+  const firstChapterLabel = projectChs[0] ? ` (${chapterHeading(dataset.chapters, projectId, projectChs[0])})` : ''
+  const lastChapterLabel = projectChs.length
+    ? ` (${chapterHeading(dataset.chapters, projectId, projectChs[projectChs.length - 1])})`
+    : ''
+  function afterOptionChapterLabel(scene: Scene): string {
+    const chapter = projectChs.find((c) => c.id === scene.chapterId)
+    return chapter ? ` (${chapterHeading(dataset.chapters, projectId, chapter)})` : ''
+  }
 
   function pickScenePreset(preset: (typeof SCENE_PRESETS)[number]) {
     setKind(preset.kind)
@@ -239,16 +256,23 @@ export default function EntryModal({
               className="w-full rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
             >
               {isEditing && <option value="keep">Keep current position</option>}
-              <option value="end">At the end</option>
-              <option value="start">At the beginning</option>
+              <option value="end">At the end{lastChapterLabel}</option>
+              <option value="start">At the beginning{firstChapterLabel}</option>
               {regularScenes
                 .filter((s) => s.id !== editingScene?.id)
                 .map((s: Scene) => (
                   <option key={s.id} value={s.id}>
                     After: {sceneHeading(dataset.scenes, s)}
+                    {afterOptionChapterLabel(s)}
                   </option>
                 ))}
             </select>
+            {projectChs.length > 1 && (
+              <p className="text-parchment-muted text-xs mt-2 mb-0 italic">
+                Picking a specific "After" scene keeps the new entry in that scene's chapter — pick "At the end" to
+                land in the newest chapter instead.
+              </p>
+            )}
           </div>
         )}
 
