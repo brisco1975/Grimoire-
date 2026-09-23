@@ -60,6 +60,34 @@ export default function EntryModal({
     return chapter ? ` (${chapterHeading(dataset.chapters, projectId, chapter)})` : ''
   }
 
+  // "After: X" is searchable rather than a plain dropdown — a project with
+  // dozens of scenes makes scrolling a native <select> tedious, especially
+  // on a phone-native picker. "At the end"/"At the beginning" stay as
+  // always-visible quick picks above the search, same pinned-option
+  // pattern ConnectionPicker uses for "Unwritten Scene".
+  const [positionQuery, setPositionQuery] = useState('')
+  const afterCandidates = useMemo(
+    () => regularScenes.filter((s) => s.id !== editingScene?.id),
+    [regularScenes, editingScene],
+  )
+  const filteredAfterCandidates = useMemo(() => {
+    const q = positionQuery.trim().toLowerCase()
+    const pool = q ? afterCandidates.filter((s) => sceneHeading(dataset.scenes, s).toLowerCase().includes(q)) : afterCandidates
+    return pool.slice(0, 50)
+  }, [afterCandidates, positionQuery, dataset.scenes])
+
+  function afterOptionLabel(scene: Scene): string {
+    return `After: ${sceneHeading(dataset.scenes, scene)}${afterOptionChapterLabel(scene)}`
+  }
+
+  function selectedPositionLabel(): string {
+    if (insertChoice === 'keep') return 'Keep current position'
+    if (insertChoice === 'end') return `At the end${lastChapterLabel}`
+    if (insertChoice === 'start') return `At the beginning${firstChapterLabel}`
+    const scene = afterCandidates.find((s) => s.id === insertChoice)
+    return scene ? afterOptionLabel(scene) : `At the end${lastChapterLabel}`
+  }
+
   function pickScenePreset(preset: (typeof SCENE_PRESETS)[number]) {
     setKind(preset.kind)
     setTitle(preset.label)
@@ -246,29 +274,75 @@ export default function EntryModal({
             scene's position only changes via Move Up/Down on the Table of Contents). */}
         {(!isEditing || isPlanned) && kind && isRegularGroup && (
           <div>
-            <label className="block text-sm text-parchment-muted mb-2" htmlFor="insert-position">
-              Position
-            </label>
-            <select
-              id="insert-position"
-              value={insertChoice}
-              onChange={(e) => setInsertChoice(e.target.value)}
-              className="w-full rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
-            >
-              {isEditing && <option value="keep">Keep current position</option>}
-              <option value="end">At the end{lastChapterLabel}</option>
-              <option value="start">At the beginning{firstChapterLabel}</option>
-              {regularScenes
-                .filter((s) => s.id !== editingScene?.id)
-                .map((s: Scene) => (
-                  <option key={s.id} value={s.id}>
-                    After: {sceneHeading(dataset.scenes, s)}
-                    {afterOptionChapterLabel(s)}
-                  </option>
-                ))}
-            </select>
+            <label className="block text-sm text-parchment-muted mb-2">Position</label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={() => setInsertChoice('keep')}
+                  className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                    insertChoice === 'keep'
+                      ? 'border-gold bg-gold text-canvas'
+                      : 'border-inset bg-surface text-parchment hover:border-gold-dim'
+                  }`}
+                >
+                  Keep current position
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setInsertChoice('end')}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  insertChoice === 'end'
+                    ? 'border-gold bg-gold text-canvas'
+                    : 'border-inset bg-surface text-parchment hover:border-gold-dim'
+                }`}
+              >
+                At the end{lastChapterLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertChoice('start')}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  insertChoice === 'start'
+                    ? 'border-gold bg-gold text-canvas'
+                    : 'border-inset bg-surface text-parchment hover:border-gold-dim'
+                }`}
+              >
+                At the beginning{firstChapterLabel}
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={positionQuery}
+              onChange={(e) => setPositionQuery(e.target.value)}
+              placeholder="Or search a scene to insert after…"
+              className="w-full rounded border border-inset bg-canvas text-parchment px-3 py-2 mb-2 focus:border-gold outline-none"
+            />
+            <div className="max-h-48 overflow-y-auto rounded border border-inset bg-surface flex flex-col">
+              {filteredAfterCandidates.length === 0 && (
+                <p className="text-parchment-muted text-sm italic px-3 py-2 m-0">No matching scenes.</p>
+              )}
+              {filteredAfterCandidates.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setInsertChoice(s.id)}
+                  className={`text-left px-3 py-2 text-sm border-b border-inset last:border-b-0 transition-colors ${
+                    insertChoice === s.id ? 'bg-surface-2 text-gold' : 'text-parchment hover:bg-surface-2'
+                  }`}
+                >
+                  {afterOptionLabel(s)}
+                </button>
+              ))}
+            </div>
+
+            <p className="text-parchment-muted text-xs mt-2 mb-0">
+              Position: <span className="text-parchment">{selectedPositionLabel()}</span>
+            </p>
             {projectChs.length > 1 && (
-              <p className="text-parchment-muted text-xs mt-2 mb-0 italic">
+              <p className="text-parchment-muted text-xs mt-1 mb-0 italic">
                 Picking a specific "After" scene keeps the new entry in that scene's chapter — pick "At the end" to
                 land in the newest chapter instead.
               </p>
