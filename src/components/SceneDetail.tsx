@@ -5,6 +5,7 @@ import ConfirmDialog from './ConfirmDialog'
 import ConnectionPicker from './ConnectionPicker'
 import EntryModal from './EntryModal'
 import LinkedText from './LinkedText'
+import LinkedTextEditor from './LinkedTextEditor'
 import Modal from './Modal'
 import { sceneHeading, groupMembers, type InsertPosition } from '../utils/tocOrdering'
 import { chapterHeading, projectChapters } from '../utils/chapters'
@@ -72,9 +73,9 @@ function TextCardButton({
         // in half. No onOpenEntry here: links render as plain highlighted
         // text rather than nested buttons, since the whole card is already a
         // single tap target.
-        <span className={`text-parchment-muted text-lg ${expanded ? '' : 'line-clamp-2'}`}>
+        <div className={`text-parchment-muted text-lg ${expanded ? '' : 'line-clamp-2'}`}>
           <LinkedText text={value} entries={entries} />
-        </span>
+        </div>
       ) : (
         <span className="text-parchment-muted text-lg italic">Empty — tap to add</span>
       )}
@@ -382,13 +383,14 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
           }}
           className="flex flex-col gap-4"
         >
-          <textarea
+          <LinkedTextEditor
+            variant="compact"
+            rows={3}
             autoFocus
             value={noteDraft}
-            onChange={(e) => setNoteDraft(e.target.value)}
+            projectId={projectId}
+            onSave={setNoteDraft}
             placeholder="Why are these connected?"
-            rows={3}
-            className="w-full resize-none rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
           />
           <div className="flex justify-end gap-3">
             <button

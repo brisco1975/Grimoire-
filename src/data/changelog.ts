@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.3.0'
+export const APP_VERSION = '2.4.0'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,19 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.4.0',
+    date: '2026-09-28',
+    changes: [
+      'Fixed: plain line breaks and blank-line paragraph spacing were being collapsed into one run-on paragraph in every card view unless the card also had a "##" heading — a single shared renderer now preserves line and paragraph breaks everywhere a card\'s text is shown (collapsed, expanded, Full Card View preview, the peek popup, and Index snippets), and through export/import.',
+      'Fixed: a bracket link inside a "##" heading line showed its raw stored syntax instead of a resolved link — headings now resolve links through the exact same path as normal text.',
+      'Fixed: "[[" bracket-linking autocomplete was missing from the Connection note field (it only worked in the original card fields) — every free-text field in the app, including Connection notes, now shares one bracket-linking component so this can\'t happen again.',
+      '"+ New Entry" is now pinned at the top of the "[[" suggestion panel, always visible above the scrolling matches and updating live with what you\'ve typed.',
+      'Fixed: tapping "Done" in Full Card View left an extra entry in the navigation history, so a subsequent back tap reopened the same card instead of reaching the Table of Contents — "Done" now behaves exactly like backing out.',
+      'Fixed: the New Entry dialog\'s Title field pre-filled with the label name as real, editable text that had to be deleted first — it\'s now grayed placeholder text, and a title left blank defaults sensibly to the label name.',
+      'Added a "Tips" section to Settings (collapsed by default, each tip expands on tap) covering linking, "##" headings, line breaks, custom cards, chapters, the position picker, planned scenes, unwritten-scene connections, aliases/See Also, and backups — plus a "Show bracket-linking hint again" button.',
+    ],
+  },
   {
     version: '2.3.0',
     date: '2026-09-23',

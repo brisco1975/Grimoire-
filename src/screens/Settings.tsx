@@ -63,6 +63,59 @@ interface ConflictItem {
 
 const SCENE_TEXT_FIELDS = new Set(['characters', 'actions', 'setting', 'time', 'lore', 'summary', 'easterEggs'])
 
+const TIPS: { id: string; title: string; body: string }[] = [
+  {
+    id: 'linking',
+    title: 'Linking with [[ ]]',
+    body: 'Type [[ in any text field to link a person, place, or thing. Choose an existing match or "+ New Entry." Linked names show in green. Backspacing into a link reveals the brackets so you can edit it.',
+  },
+  {
+    id: 'headings',
+    title: '## headings',
+    body: 'Start a line with ## to turn it into a heading in any card\'s text. Use it to break a card into labeled sections, like "Mentioned" in a Setting card or "Time of day" in a Time card.',
+  },
+  {
+    id: 'line-breaks',
+    title: 'Line breaks',
+    body: 'Press Enter for a new line, or leave a blank line between entries for paragraph spacing. No special syntax needed.',
+  },
+  {
+    id: 'custom-cards',
+    title: 'Custom cards',
+    body: 'Tap "Cards" at the top of a project\'s Table of Contents (beside Rename and Delete Project) to turn cards on or off or create your own. Settings are per project, and hiding a card never deletes its content.',
+  },
+  {
+    id: 'chapters',
+    title: 'Chapters',
+    body: '"+ New Chapter" groups scenes. Scene numbers stay continuous across chapters, and the up/down arrows move scenes between chapters.',
+  },
+  {
+    id: 'position-picker',
+    title: 'Position picker',
+    body: '"At the end" lands in the newest chapter. "After: [scene]" keeps the new entry in that scene\'s chapter. The list is searchable by title or number.',
+  },
+  {
+    id: 'planned-scenes',
+    title: 'Planned scenes',
+    body: '"+ Plan Next Scene" holds a scene you haven\'t written yet. "Mark as Written" converts it and keeps everything you entered.',
+  },
+  {
+    id: 'unwritten-connections',
+    title: 'Unwritten Scene connections',
+    body: 'Pick "Unwritten Scene" in the connection picker for a scene that doesn\'t exist yet. Edit the connection later to point at the real scene.',
+  },
+  {
+    id: 'aliases-see-also',
+    title: 'Aliases and See Also',
+    body: 'Open an Index entry to add alternate names ("Also Known As") or link related entries without merging them.',
+  },
+  {
+    id: 'backups',
+    title: 'Backups',
+    body: 'Export regularly. A web app can\'t warn you before its data is cleared, so "Last exported" in Settings is your safety net.',
+  },
+]
+
 const FIELD_LABELS: Record<string, string> = {
   title: 'Title',
   status: 'Status',
@@ -352,6 +405,10 @@ export default function Settings() {
   const visibleChangelog = showAllVersions ? CHANGELOG : CHANGELOG.slice(0, RECENT_VERSIONS_SHOWN)
   const hiddenVersionCount = CHANGELOG.length - RECENT_VERSIONS_SHOWN
 
+  const [tipsOpen, setTipsOpen] = useState(false)
+  const [expandedTip, setExpandedTip] = useState<string | null>(null)
+  const [hintReset, setHintReset] = useState(false)
+
   return (
     <div className="flex-1 flex flex-col">
       <AppHeader title="Settings" onBack={() => navigate(-1)} showSettings={false} />
@@ -402,6 +459,56 @@ export default function Settings() {
                 Export anyway
               </button>
             </p>
+          )}
+        </section>
+
+        {/* Tips */}
+        <section className="rounded-lg border border-inset bg-surface p-4">
+          <button
+            type="button"
+            onClick={() => setTipsOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left"
+          >
+            <h2 className="font-heading text-gold text-lg m-0">Tips</h2>
+            <span className="text-gold-dim text-sm">{tipsOpen ? '▲' : '▼'}</span>
+          </button>
+          {tipsOpen && (
+            <div className="mt-3 flex flex-col gap-1">
+              {TIPS.map((tip) => {
+                const expanded = expandedTip === tip.id
+                return (
+                  <div key={tip.id} className="border-b border-inset last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedTip(expanded ? null : tip.id)}
+                      className="w-full flex items-center justify-between gap-2 text-left py-2"
+                    >
+                      <span className="text-parchment text-sm">{tip.title}</span>
+                      <span className="text-gold-dim text-xs shrink-0">{expanded ? '−' : '+'}</span>
+                    </button>
+                    {expanded && <p className="text-parchment-muted text-sm mt-0 mb-3">{tip.body}</p>}
+                  </div>
+                )
+              })}
+
+              <div className="pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch({ type: 'SET_LINK_HINT_SEEN', seen: false })
+                    setHintReset(true)
+                  }}
+                  className="px-4 py-2 rounded border border-inset text-parchment hover:border-gold-dim transition-colors"
+                >
+                  Show bracket-linking hint again
+                </button>
+                {hintReset && (
+                  <p className="text-link text-sm mt-2">
+                    Done — the hint will appear again the next time you open a card's text field.
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </section>
 

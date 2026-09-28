@@ -90,12 +90,16 @@ export default function EntryModal({
 
   function pickScenePreset(preset: (typeof SCENE_PRESETS)[number]) {
     setKind(preset.kind)
-    setTitle(preset.label)
+    // Title is left blank, not pre-filled with the preset label — the
+    // label shows as PLACEHOLDER text instead (see the Title field below)
+    // so typing a real title never requires deleting anything first. An
+    // empty title still gets a sensible default at submit time.
+    setTitle('')
   }
 
   function pickMatterPreset(preset: (typeof MATTER_PRESETS)[number]) {
     setKind(preset.kind)
-    setTitle(preset.label)
+    setTitle('')
     setMatterPosition(preset.defaultPosition)
   }
 
@@ -104,13 +108,24 @@ export default function EntryModal({
     setTitle('')
   }
 
+  /** The preset label a kind defaults to when its title is left blank — undefined for Custom, which has no inherent label to fall back to. */
+  function defaultLabelForKind(k: SceneKind): string | undefined {
+    return SCENE_PRESETS.find((p) => p.kind === k)?.label ?? MATTER_PRESETS.find((p) => p.kind === k)?.label
+  }
+
   const isRegularGroup = kind !== null && REGULAR_SCENE_KINDS.includes(kind)
   const isPrologueOrEpilogue = kind === 'prologue' || kind === 'epilogue'
   const typeChanged = isEditing && (behavior !== editingScene!.behavior || kind !== editingScene!.kind)
+  const isCustomKind = kind === 'custom-scene' || kind === 'custom-matter'
+  // Custom has no default label to fall back to, so it's the one case that
+  // still requires the user to actually type something.
+  const titleRequired = isCustomKind
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!behavior || !kind || !title.trim()) return
+    if (!behavior || !kind) return
+    if (titleRequired && !title.trim()) return
+    const finalTitle = title.trim() || defaultLabelForKind(kind) || ''
 
     if (isEditing) {
       dispatch({
@@ -119,7 +134,7 @@ export default function EntryModal({
         patch: {
           behavior,
           kind,
-          title: title.trim(),
+          title: finalTitle,
           matterPosition: behavior === 'matter' ? matterPosition : null,
         },
       })
@@ -144,7 +159,7 @@ export default function EntryModal({
       projectId,
       behavior,
       kind,
-      title: title.trim(),
+      title: finalTitle,
       matterPosition: behavior === 'matter' ? matterPosition : undefined,
       insertPosition,
       status: planning ? 'planned' : 'written',
@@ -263,7 +278,7 @@ export default function EntryModal({
               autoFocus={!isEditing}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={kind === 'custom-scene' || kind === 'custom-matter' ? 'Type a label…' : undefined}
+              placeholder={isCustomKind ? 'Type a label…' : (defaultLabelForKind(kind) ?? undefined)}
               className="w-full rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
             />
           </div>
@@ -404,7 +419,7 @@ export default function EntryModal({
           </button>
           <button
             type="submit"
-            disabled={!behavior || !kind || !title.trim()}
+            disabled={!behavior || !kind || (titleRequired && !title.trim())}
             className="px-4 py-2 rounded bg-accent hover:bg-accent-bright text-parchment font-heading tracking-wide disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {isEditing ? 'Save Changes' : 'Create'}

@@ -1,18 +1,16 @@
 import type { IndexEntry } from '../types'
-import { parseSegments, splitDisplayLines, splitHeadingLabel } from '../utils/links'
+import { parseSegments, splitDisplayLines, splitHeadingSegments, type LinkSegment } from '../utils/links'
 
-/** Renders one line's worth of raw text as bracket-link segments — the exact rendering LinkedText has always done, just factored out so it can run once per line when headings are present. */
+/** Renders a pre-parsed list of bracket-link segments — the exact rendering LinkedText has always done, just factored out so both a plain line and a heading's label/value portions can share it without re-parsing text that's already been split. */
 function InlineSegments({
-  text,
+  segments,
   entries,
   onOpenEntry,
 }: {
-  text: string
+  segments: LinkSegment[]
   entries: IndexEntry[]
   onOpenEntry?: (entry: IndexEntry) => void
 }) {
-  const segments = parseSegments(text)
-
   return (
     <>
       {segments.map((seg, i) => {
@@ -63,24 +61,36 @@ function InlineSegments({
  * links (entry was deleted) fall back to the same plain, unhighlighted
  * bracketed text, visually identical to a mention that was never linked.
  *
- * A line starting with "##" renders as a heading instead of plain prose
- * (see utils/links.splitDisplayLines) — narrow, single-marker support, not
- * a markdown engine. A heading line is written "##Label- value" (e.g.
- * "##Day- Zero.", "##Time of day- Early evening.") and renders as TWO
- * colors on one line: everything up to and including the first "-" is the
- * label, in malachite green (text-link); everything after it is the
- * value, in gold (text-gold) — see utils/links.splitHeadingLabel. A
- * heading with no dash has nothing to split, so the whole line is just the
- * green label. Plain non-heading lines (no "##") also render in gold, on
- * the assumption that they're body prose belonging to whichever heading
- * came before them. (A resolved bracket link renders in its own green
- * wherever it appears, label or value or plain body — LinkedText always
- * colors links explicitly regardless of the surrounding text's color.)
- * This only kicks in on fields that actually contain a "##" line — when no
- * line in this text uses "##", rendering falls straight back to the
- * original flat inline output (no per-line wrapping, no gold), so plain
- * prose — the overwhelming majority of existing content — is completely
- * unaffected by this feature's existence.
+ * This is the SOLE renderer for card text everywhere it's shown at rest —
+ * the collapsed/expanded scene card, Full Card View's preview, the Table
+ * of Contents peek popup, and anywhere else a card's text is displayed —
+ * so line breaks, headings, and link resolution can never diverge between
+ * views by construction.
+ *
+ * Every line (see utils/links.splitDisplayLines) renders as its own block,
+ * always — a single newline is a visible line break, and a blank line
+ * (rendered as a non-breaking space so it isn't collapsed away) reads as
+ * paragraph spacing. This holds whether or not any line uses "##"; a field
+ * with no heading at all still gets one block per line, just without any
+ * heading-specific styling.
+ *
+ * A line starting with "##" renders as a heading instead of plain prose —
+ * narrow, single-marker support, not a markdown engine. A heading line is
+ * written "##Label- value" (e.g. "##Day- Zero.") and renders as TWO colors
+ * on one line: everything up to and including the first "-" is the label,
+ * in malachite green (text-link); everything after it is the value, in
+ * gold (text-gold) — see utils/links.splitHeadingSegments. That split runs
+ * on the line's PARSED segments, not its raw string, specifically so a
+ * bracket-link token's own id (always dash-containing, being a UUID) can
+ * never be mistaken for the label/value separator and bisected. A heading
+ * with no dash has nothing to split, so the whole line is just the green
+ * label. Once any line in a field uses "##", every OTHER (non-heading)
+ * line in that same field also renders gold, on the assumption that it's
+ * body prose belonging to whichever heading came before it — a field with
+ * no heading at all keeps its plain, inherited color instead. (A resolved
+ * bracket link renders in its own green wherever it appears, label or
+ * value or plain body — this always colors links explicitly regardless of
+ * the surrounding text's color.)
  */
 export default function LinkedText({
   text,
@@ -95,29 +105,29 @@ export default function LinkedText({
   const lines = splitDisplayLines(text)
   const hasHeading = lines.some((l) => l.heading)
 
-  if (!hasHeading) {
-    return <InlineSegments text={text} entries={entries} onOpenEntry={onOpenEntry} />
-  }
-
   return (
     <>
       {lines.map((line, i) => {
         if (!line.heading) {
           return (
-            <div key={i} className="text-gold">
-              <InlineSegments text={line.text} entries={entries} onOpenEntry={onOpenEntry} />
+            <div key={i} className={hasHeading ? 'text-gold' : undefined}>
+              {line.text === '' ? (
+                ' '
+              ) : (
+                <InlineSegments segments={parseSegments(line.text)} entries={entries} onOpenEntry={onOpenEntry} />
+              )}
             </div>
           )
         }
-        const { label, value } = splitHeadingLabel(line.text)
+        const { label, value } = splitHeadingSegments(parseSegments(line.text))
         return (
           <div key={i} className="font-heading text-lg tracking-wide mt-2 first:mt-0">
             <span className="text-link">
-              <InlineSegments text={label} entries={entries} onOpenEntry={onOpenEntry} />
+              <InlineSegments segments={label} entries={entries} onOpenEntry={onOpenEntry} />
             </span>
             {value !== null && (
               <span className="text-gold">
-                <InlineSegments text={value} entries={entries} onOpenEntry={onOpenEntry} />
+                <InlineSegments segments={value} entries={entries} onOpenEntry={onOpenEntry} />
               </span>
             )}
           </div>

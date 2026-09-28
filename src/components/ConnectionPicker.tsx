@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../store/AppContext'
 import type { ConnectionTarget, Scene, SceneConnection } from '../types'
 import { sceneHeading } from '../utils/tocOrdering'
+import LinkedTextEditor from './LinkedTextEditor'
 import Modal from './Modal'
 
 type Selection = { kind: 'scene'; scene: Scene } | { kind: 'unwritten' }
@@ -125,14 +126,15 @@ export default function ConnectionPicker({
               <label className="block text-sm text-parchment-muted mb-2" htmlFor="connection-note">
                 Why are these connected? (optional)
               </label>
-              <textarea
+              <LinkedTextEditor
                 id="connection-note"
+                variant="compact"
+                rows={2}
                 autoFocus
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                projectId={currentScene.projectId}
+                onSave={setNote}
                 placeholder="e.g. Kala and Mira are named here"
-                rows={2}
-                className="w-full resize-none rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
               />
             </div>
           )}
@@ -162,14 +164,15 @@ export default function ConnectionPicker({
             <label className="block text-sm text-parchment-muted mb-2" htmlFor="unwritten-description">
               Describe the scene you expect to connect to
             </label>
-            <textarea
+            <LinkedTextEditor
               id="unwritten-description"
+              variant="compact"
+              rows={2}
               autoFocus
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              projectId={currentScene.projectId}
+              onSave={setDescription}
               placeholder="e.g. Future scene about the Academy's fall"
-              rows={2}
-              className="w-full resize-none rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
             />
           </div>
           {!isEditing && (
@@ -177,13 +180,14 @@ export default function ConnectionPicker({
               <label className="block text-sm text-parchment-muted mb-2" htmlFor="unwritten-note">
                 Why are these connected? (optional)
               </label>
-              <textarea
+              <LinkedTextEditor
                 id="unwritten-note"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. Kala and Mira are named here"
+                variant="compact"
                 rows={2}
-                className="w-full resize-none rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none"
+                value={note}
+                projectId={currentScene.projectId}
+                onSave={setNote}
+                placeholder="e.g. Kala and Mira are named here"
               />
             </div>
           )}

@@ -46,12 +46,10 @@ export default function FullCardView() {
     [dataset.indexEntries, projectId],
   )
 
-  const backTo = `/project/${projectId}/scene/${sceneId}`
-
   if (!scene || !cardMeta || !projectId) {
     return (
       <div className="flex-1 flex flex-col">
-        <AppHeader title="Not found" onBack={() => navigate(backTo)} />
+        <AppHeader title="Not found" onBack={() => navigate(-1)} />
         <div className="p-6 text-parchment-muted">This card no longer exists.</div>
       </div>
     )
@@ -59,7 +57,16 @@ export default function FullCardView() {
 
   function leave() {
     editorRef.current?.flush()
-    navigate(backTo)
+    // navigate(-1) rather than navigate(backTo) — this route was reached by
+    // a PUSH from the Scene Page, so leaving should be a true pop (identical
+    // to the device/browser back gesture), not another push. Pushing here
+    // left a duplicate Scene Page entry in history: Done would land back on
+    // the Scene Page correctly, but a SUBSEQUENT back tap popped to this
+    // FullCardView entry instead of the Table of Contents, reopening the
+    // same card. Popping instead means Done always leaves exactly the
+    // history the user already had, so one more back tap goes where it
+    // actually should.
+    navigate(-1)
   }
 
   function enterPreview() {
@@ -86,7 +93,7 @@ export default function FullCardView() {
             type="button"
             onClick={() => {
               setShowHint(false)
-              dispatch({ type: 'SET_LINK_HINT_SEEN' })
+              dispatch({ type: 'SET_LINK_HINT_SEEN', seen: true })
             }}
             className="shrink-0 text-gold-dim hover:text-gold text-sm transition-colors"
           >

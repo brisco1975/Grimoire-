@@ -198,26 +198,47 @@ export function splitDisplayLines(raw: string): DisplayLine[] {
   })
 }
 
-export interface HeadingSplit {
-  /** The label portion, dash included (e.g. "Day-"). Renders in the heading color. */
-  label: string
-  /** Everything after the dash (e.g. " Zero."), or null when the line has no dash to split on — the whole line is then just the label. */
-  value: string | null
+export interface HeadingParts {
+  /** Segments up to and including the first literal "-" found in plain text. */
+  label: LinkSegment[]
+  /** Everything after that dash, or null when the line had no dash to split on — the whole line is then just the label. */
+  value: LinkSegment[] | null
 }
 
-const HEADING_LABEL_RE = /^([^-\n]*-)(.*)$/
-
 /**
- * Splits a heading line's already-marker-stripped text at its FIRST "-"
- * into a label (kept with its dash) and a value — "Day- Zero." becomes
- * label "Day-", value " Zero.". This is what lets a heading line read as
- * two colors: the label name in the heading color, the value/detail after
- * it in the body color (see LinkedText). A heading with no dash (e.g. a
- * plain "##Chapter One") has nothing to split — value is null and the
- * whole line stays the label/heading color.
+ * Splits a heading line's already bracket-parsed segments (see
+ * parseSegments) into a label portion and a value portion, at the first
+ * literal "-" found in a PLAIN-TEXT segment — never inside a link segment.
+ * Operating on segments instead of the raw string is what makes this safe:
+ * a resolved link's raw token embeds a UUID id (e.g.
+ * "[[@982d3870-d1a7-...|Millennium Celebration]]"), which almost always
+ * contains its own "-" characters. Splitting the raw string naively would
+ * find that dash first and bisect the token itself, leaving both halves as
+ * unparseable garbage instead of a resolved link — this is what "##[[Some
+ * Link]] = ..." rendering as raw [[@id|...]] syntax was: the id's own
+ * dashes losing the race against the intended "##Label- value" dash.
+ * Since link segments here are pre-parsed and atomic, a dash embedded in
+ * one's id can never be seen as a split point.
  */
-export function splitHeadingLabel(text: string): HeadingSplit {
-  const m = HEADING_LABEL_RE.exec(text)
-  if (!m) return { label: text, value: null }
-  return { label: m[1], value: m[2] }
+export function splitHeadingSegments(segments: LinkSegment[]): HeadingParts {
+  const label: LinkSegment[] = []
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    if (seg.type === 'link') {
+      label.push(seg)
+      continue
+    }
+    const dashIdx = seg.value.indexOf('-')
+    if (dashIdx === -1) {
+      label.push(seg)
+      continue
+    }
+    label.push({ type: 'text', value: seg.value.slice(0, dashIdx + 1) })
+    const value: LinkSegment[] = []
+    const rest = seg.value.slice(dashIdx + 1)
+    if (rest) value.push({ type: 'text', value: rest })
+    value.push(...segments.slice(i + 1))
+    return { label, value }
+  }
+  return { label, value: null }
 }

@@ -62,7 +62,7 @@ type Action =
   | { type: 'DELETE_INDEX_ENTRY'; id: string }
   | { type: 'ADD_SEE_ALSO_LINK'; aId: string; bId: string }
   | { type: 'REMOVE_SEE_ALSO_LINK'; aId: string; bId: string }
-  | { type: 'SET_LINK_HINT_SEEN' }
+  | { type: 'SET_LINK_HINT_SEEN'; seen: boolean }
   | { type: 'REPLACE_DATASET'; dataset: GrimoireDataset }
   | { type: 'SET_LAST_EXPORTED'; timestamp: string; hash: string }
   | { type: 'ADD_CUSTOM_CARD'; projectId: string; label: string; layout: CustomCardDef['layout'] }
@@ -415,7 +415,7 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       }
     }
     case 'SET_LINK_HINT_SEEN': {
-      return { ...state, meta: { ...state.meta, hasSeenLinkHint: true } }
+      return { ...state, meta: { ...state.meta, hasSeenLinkHint: action.seen } }
     }
     case 'REPLACE_DATASET': {
       return action.dataset

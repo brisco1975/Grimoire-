@@ -21,12 +21,28 @@ const TYPE_LABELS: Record<IndexEntryType, string> = { person: 'Person', place: '
 
 /**
  * The active-editing surface for any bracket-linkable text field. Typing
- * `[[` opens a live-filtered dropdown of this project's Index entries
- * (always trailed by "+ New Entry"). While focused, links show as plain
- * `[[Name]]` bracket text by design — the spec's "brackets hidden, green
- * highlight" treatment is reserved for the AT-REST view (see LinkedText,
- * used in ScenePage's card previews) once a field is no longer actively
- * being edited.
+ * `[[` opens a live-filtered dropdown of this project's Index entries, with
+ * "+ New Entry" PINNED above the scrollable matches (not trailing them) so
+ * it's always visible without scrolling, live-reflecting whatever's been
+ * typed after `[[` and wrapping onto a second line rather than truncating
+ * a long typed name. While focused, links show as plain `[[Name]]` bracket
+ * text by design — the spec's "brackets hidden, green highlight" treatment
+ * is reserved for the AT-REST view (see LinkedText) once a field is no
+ * longer actively being edited.
+ *
+ * This is the ONE component every bracket-linkable field in the app goes
+ * through — the large scene-card fields (`variant="full"`, the default)
+ * AND small inline fields like a Connection's note or an Unwritten Scene's
+ * description (`variant="compact"`) — so autocomplete, the pinned "+ New
+ * Entry", and the classification/collision flows can never diverge or go
+ * missing per field; a brand-new text field gets all of it automatically
+ * just by rendering this component instead of a plain `<textarea>`.
+ * `variant="full"` auto-saves on a 400ms debounce (see `flush()` below,
+ * for a persisted scene field that's continuously live-edited);
+ * `variant="compact"` saves on every keystroke instead (for a small field
+ * inside a form/modal whose value is only read again on explicit submit —
+ * there's no ambient "continuously auto-saving" concern there, so there's
+ * nothing to usefully debounce).
  *
  * Deliberately does NOT try to anchor the dropdown to the exact caret
  * pixel position — that measurement is notoriously unreliable across
@@ -41,8 +57,18 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
   placeholder?: string
   autoFocus?: boolean
   onFirstFocus?: () => void
-}>(function LinkedTextEditor({ value, projectId, onSave, placeholder, autoFocus, onFirstFocus }, ref) {
+  /** 'full' (default) is the large auto-growing scene-card editor with a debounced auto-save. 'compact' is a small fixed-height field (a Connection note, an Unwritten Scene description, …) that saves on every keystroke instead, sized by `rows`. */
+  variant?: 'full' | 'compact'
+  /** Textarea row count — only meaningful for variant="compact" (the "full" variant sizes itself via flex/min-height instead). */
+  rows?: number
+  /** Passed straight through to the underlying textarea — lets a caller pair it with a `<label htmlFor>`. */
+  id?: string
+}>(function LinkedTextEditor(
+  { value, projectId, onSave, placeholder, autoFocus, onFirstFocus, variant = 'full', rows, id },
+  ref,
+) {
   const { dataset, dispatch } = useApp()
+  const compact = variant === 'compact'
 
   const [friendly, setFriendly] = useState(() => rawToFriendly(value))
   const [trigger, setTrigger] = useState<{ start: number; query: string } | null>(null)
@@ -114,6 +140,16 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
   function commit(next: string) {
     setFriendly(next)
     if (saveTimer.current) clearTimeout(saveTimer.current)
+    if (compact) {
+      // No debounce for a small, explicit-submit field — there's no
+      // continuously-persisted value to protect from excess writes, and
+      // the caller needs the current raw text available immediately
+      // (e.g. reading it the moment "Add Connection" is tapped).
+      const raw = friendlyToRaw(next, entriesRef.current, projectId)
+      lastSavedRaw.current = raw
+      onSave(raw)
+      return
+    }
     saveTimer.current = setTimeout(() => {
       const raw = friendlyToRaw(next, entriesRef.current, projectId)
       lastSavedRaw.current = raw
@@ -225,12 +261,14 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
   const suggestions = dropdownOpen ? matchEntries(dataset.indexEntries, projectId, trigger!.query) : []
 
   return (
-    <div ref={containerRef} className="relative flex-1 flex flex-col">
+    <div ref={containerRef} className={compact ? 'relative flex flex-col' : 'relative flex-1 flex flex-col'}>
       <textarea
         ref={textareaRef}
+        id={id}
         autoFocus={autoFocus}
         value={friendly}
         placeholder={placeholder}
+        rows={compact ? (rows ?? 2) : undefined}
         onFocus={() => {
           if (!firstFocusFired.current) {
             firstFocusFired.current = true
@@ -247,43 +285,51 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
             setTrigger(null)
           }
         }}
-        // flex-1 alone would still grow to fill all remaining vertical space
-        // in the container regardless of min-height (flex-grow overrides a
-        // min-height floor when there's free space to hand out) — so
-        // shrinking the field while the dropdown is open needs flex-none
-        // plus an explicit height, not just a smaller min-height. That keeps
-        // the dropdown docked right below a SHORT field near the top of the
-        // available space, instead of below a tall field whose bottom (and
-        // everything after it) is hidden under the on-screen keyboard.
-        className={`w-full resize-none rounded-lg border border-inset bg-surface text-parchment text-xl px-4 py-3 leading-relaxed focus:border-gold outline-none transition-[flex-basis,height] duration-150 ${
-          dropdownOpen ? 'flex-none h-[18vh]' : 'flex-1 min-h-[40vh]'
-        }`}
+        className={
+          compact
+            ? 'w-full resize-none rounded border border-inset bg-canvas text-parchment px-3 py-2 focus:border-gold outline-none'
+            : // flex-1 alone would still grow to fill all remaining vertical space
+              // in the container regardless of min-height (flex-grow overrides a
+              // min-height floor when there's free space to hand out) — so
+              // shrinking the field while the dropdown is open needs flex-none
+              // plus an explicit height, not just a smaller min-height. That keeps
+              // the dropdown docked right below a SHORT field near the top of the
+              // available space, instead of below a tall field whose bottom (and
+              // everything after it) is hidden under the on-screen keyboard.
+              `w-full resize-none rounded-lg border border-inset bg-surface text-parchment text-xl px-4 py-3 leading-relaxed focus:border-gold outline-none transition-[flex-basis,height] duration-150 ${
+                dropdownOpen ? 'flex-none h-[18vh]' : 'flex-1 min-h-[40vh]'
+              }`
+        }
       />
 
       {dropdownOpen && (
-        <div className="mt-2 rounded-lg border border-gold-dim bg-surface-2 shadow-lg shadow-black/40 max-h-56 overflow-y-auto">
-          {suggestions.length === 0 && (
-            <div className="px-3 py-2 text-parchment-muted text-sm italic">No matches yet.</div>
-          )}
-          {suggestions.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => pickSuggestion(entry)}
-              className="w-full text-left px-3 py-2 hover:bg-surface transition-colors flex items-center justify-between gap-2"
-            >
-              <span className="text-parchment">{entry.name}</span>
-              <span className="text-gold-dim text-xs uppercase tracking-wide">{TYPE_LABELS[entry.type]}</span>
-            </button>
-          ))}
+        <div className="mt-2 rounded-lg border border-gold-dim bg-surface-2 shadow-lg shadow-black/40 flex flex-col overflow-hidden">
+          {/* Pinned above the scrollable matches, not trailing them — always
+              visible without scrolling, however many Index entries match. */}
           <button
             type="button"
             onClick={pickNewEntry}
             disabled={!trigger?.query.trim()}
-            className="w-full text-left px-3 py-2 border-t border-inset text-gold hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full text-left px-3 py-2 border-b border-inset text-gold hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-normal break-words"
           >
             + New Entry{trigger?.query.trim() ? `: "${trigger.query.trim()}"` : ''}
           </button>
+          <div className="max-h-56 overflow-y-auto">
+            {suggestions.length === 0 && (
+              <div className="px-3 py-2 text-parchment-muted text-sm italic">No matches yet.</div>
+            )}
+            {suggestions.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => pickSuggestion(entry)}
+                className="w-full text-left px-3 py-2 hover:bg-surface transition-colors flex items-center justify-between gap-2"
+              >
+                <span className="text-parchment">{entry.name}</span>
+                <span className="text-gold-dim text-xs uppercase tracking-wide">{TYPE_LABELS[entry.type]}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

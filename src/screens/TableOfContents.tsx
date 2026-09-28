@@ -416,13 +416,13 @@ export default function TableOfContents() {
         onClose={() => setPeekScene(null)}
         title={peekScene ? sceneHeading(dataset.scenes, peekScene) : ''}
       >
-        <p className="text-parchment whitespace-pre-wrap min-h-[3em] m-0 mb-5">
+        <div className="text-parchment whitespace-pre-wrap min-h-[3em] m-0 mb-5">
           {peekScene?.summary?.trim() ? (
             <LinkedText text={peekScene.summary} entries={projectEntries} />
           ) : (
             <span className="text-parchment-muted italic">No summary yet.</span>
           )}
-        </p>
+        </div>
         <div className="flex justify-end gap-3">
           <button
             type="button"
