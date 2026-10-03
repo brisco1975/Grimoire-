@@ -4,26 +4,95 @@ import { useApp, type ConflictResolutions, type ItemResolution } from '../store/
 import {
   SCHEMA_VERSION,
   type Chapter,
+  type DeletedItem,
   type DeletedItemKind,
   type GrimoireDataset,
   type IndexEntry,
+  type IndexEntryType,
   type Project,
   type Scene,
 } from '../types'
 import AppHeader from '../components/AppHeader'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
+import RestoreCollisionDialog, { type CollisionSidePreview } from '../components/RestoreCollisionDialog'
 import { APP_VERSION, CHANGELOG } from '../data/changelog'
 import { nowIso } from '../utils/id'
 import { toPlainDisplayText } from '../utils/links'
 import { hashString } from '../utils/hash'
 import { RECENTLY_DELETED_RETENTION_DAYS } from '../store/db'
+import { findRestoreCollision, type RestoreCollision } from '../utils/recentlyDeleted'
+import { sceneHeading } from '../utils/tocOrdering'
 
 function kindLabelFor(kind: DeletedItemKind): string {
   if (kind === 'scene') return 'Scene'
   if (kind === 'chapter') return 'Chapter'
   if (kind === 'indexEntry') return 'Index entry'
   return 'Card content'
+}
+
+const ENTRY_TYPE_LABEL: Record<IndexEntryType, string> = { person: 'Person', place: 'Place', thing: 'Thing' }
+
+/** What the deleted side of the restore-collision dialog should show for a given Recently Deleted record. */
+function describeDeletedSide(item: DeletedItem): CollisionSidePreview {
+  if (item.kind === 'scene' && item.scene) {
+    return {
+      title: item.label,
+      subtitle: 'Scene',
+      preview: toPlainDisplayText(item.scene.summary || item.scene.actions || '').slice(0, 180),
+    }
+  }
+  if (item.kind === 'chapter') {
+    return { title: item.label, subtitle: 'Chapter', preview: '' }
+  }
+  if (item.kind === 'indexEntry' && item.indexEntry) {
+    return {
+      title: item.label,
+      subtitle: ENTRY_TYPE_LABEL[item.indexEntry.type],
+      preview: item.indexEntry.aliases.length ? `Also known as: ${item.indexEntry.aliases.join(', ')}` : '',
+    }
+  }
+  if (item.kind === 'cardContent' && item.cardContent) {
+    return {
+      title: item.cardContent.cardLabel,
+      subtitle: 'Card content',
+      preview: toPlainDisplayText(item.cardContent.value).slice(0, 180),
+    }
+  }
+  return { title: item.label, subtitle: '', preview: '' }
+}
+
+/** What the live side of the restore-collision dialog should show for whatever findRestoreCollision() found. */
+function describeLiveSide(dataset: GrimoireDataset, collision: RestoreCollision): CollisionSidePreview {
+  if (collision.kind === 'scene') {
+    const s = collision.live
+    return {
+      title: sceneHeading(dataset.scenes, s),
+      subtitle: 'Scene',
+      preview: toPlainDisplayText(s.summary || s.actions || '').slice(0, 180),
+      idLabel: s.id,
+    }
+  }
+  if (collision.kind === 'chapter') {
+    const c = collision.live
+    return { title: c.name || 'Unnamed chapter', subtitle: 'Chapter', preview: '', idLabel: c.id }
+  }
+  if (collision.kind === 'indexEntry') {
+    const e = collision.live
+    return {
+      title: e.name,
+      subtitle: ENTRY_TYPE_LABEL[e.type],
+      preview: e.aliases.length ? `Also known as: ${e.aliases.join(', ')}` : '',
+      idLabel: e.id,
+    }
+  }
+  const c = collision.live
+  return {
+    title: c.cardLabel,
+    subtitle: 'Card content',
+    preview: toPlainDisplayText(c.value).slice(0, 180),
+    idLabel: `${c.sceneId.slice(0, 8)}…`,
+  }
 }
 
 /**
@@ -433,6 +502,18 @@ export default function Settings() {
 
   const [deletedOpen, setDeletedOpen] = useState(false)
   const [confirmEmptyDeleted, setConfirmEmptyDeleted] = useState(false)
+  const [restoreCollision, setRestoreCollision] = useState<{ item: DeletedItem; collision: RestoreCollision } | null>(
+    null,
+  )
+
+  function handleRestoreClick(item: DeletedItem) {
+    const collision = findRestoreCollision(dataset, item)
+    if (!collision) {
+      dispatch({ type: 'RESTORE_DELETED_ITEM', id: item.id })
+      return
+    }
+    setRestoreCollision({ item, collision })
+  }
 
   return (
     <div className="flex-1 flex flex-col">
@@ -523,7 +604,7 @@ export default function Settings() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => dispatch({ type: 'RESTORE_DELETED_ITEM', id: item.id })}
+                          onClick={() => handleRestoreClick(item)}
                           className="shrink-0 px-3 py-1.5 rounded border border-inset text-parchment hover:border-gold-dim transition-colors text-sm"
                         >
                           Restore
@@ -834,6 +915,31 @@ export default function Settings() {
           setConfirmEmptyDeleted(false)
         }}
       />
+
+      {restoreCollision && (
+        <RestoreCollisionDialog
+          open
+          deleted={describeDeletedSide(restoreCollision.item)}
+          live={describeLiveSide(dataset, restoreCollision.collision)}
+          onSwap={() => {
+            dispatch({
+              type: 'RESOLVE_RESTORE_COLLISION',
+              deletedItemId: restoreCollision.item.id,
+              resolution: 'swap',
+            })
+            setRestoreCollision(null)
+          }}
+          onDiscard={() => {
+            dispatch({
+              type: 'RESOLVE_RESTORE_COLLISION',
+              deletedItemId: restoreCollision.item.id,
+              resolution: 'discard',
+            })
+            setRestoreCollision(null)
+          }}
+          onCancel={() => setRestoreCollision(null)}
+        />
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.5.0'
+export const APP_VERSION = '2.5.1'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,13 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.5.1',
+    date: '2026-10-03',
+    changes: [
+      'Restoring something from Recently Deleted now checks for a collision first — a live scene, chapter, Index entry, or card-content slot that already exists where it would go (most likely after a merge-import revives something under the same id) — and, if there is one, shows both versions side by side with a choice: restore and move the current item into Recently Deleted instead, keep the current item and permanently discard the deleted one, or cancel and change nothing. It never silently overwrites, never silently refuses, and never creates two live items sharing one id or a duplicate Index entry name.',
+    ],
+  },
   {
     version: '2.5.0',
     date: '2026-10-03',

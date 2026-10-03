@@ -29,6 +29,7 @@ import { loadDataset, saveDataset, migrateDataset, purgeExpiredDeleted } from '.
 import { makeId, nowIso } from '../utils/id'
 import { computeInsertIndex, groupMembers, sceneGroupOf, swapScenePositions, sceneHeading, type InsertPosition } from '../utils/tocOrdering'
 import { projectChapters } from '../utils/chapters'
+import { findRestoreCollision } from '../utils/recentlyDeleted'
 
 type Action =
   | { type: 'ADD_PROJECT'; title: string }
@@ -77,6 +78,7 @@ type Action =
   | { type: 'REORDER_CHAPTER'; id: string; projectId: string; direction: 'up' | 'down' }
   | { type: 'CLEAR_CARD_CONTENT'; sceneId: string; cardKey: string; cardLabel: string; isCustomCard: boolean }
   | { type: 'RESTORE_DELETED_ITEM'; id: string }
+  | { type: 'RESOLVE_RESTORE_COLLISION'; deletedItemId: string; resolution: 'swap' | 'discard' }
   | { type: 'EMPTY_RECENTLY_DELETED' }
 
 /** Ensures the project has at least one chapter, returning the LAST one's id (creating an unnamed one if none exist yet) plus the possibly-extended chapters array. */
@@ -644,6 +646,13 @@ function baseReducer(state: GrimoireDataset, action: Action): GrimoireDataset {
     case 'RESTORE_DELETED_ITEM': {
       const item = state.recentlyDeleted.find((d) => d.id === action.id)
       if (!item) return state
+      // Safety net, not the primary path — the UI is expected to check
+      // findRestoreCollision() itself and route a collision through
+      // RESOLVE_RESTORE_COLLISION instead, where the user picks an outcome.
+      // Restoring anyway here would either duplicate a live id or (an
+      // Index entry) reintroduce a duplicate name, so refuse rather than
+      // silently doing either.
+      if (findRestoreCollision(state, item)) return state
       const recentlyDeleted = state.recentlyDeleted.filter((d) => d.id !== action.id)
       if (item.kind === 'scene' && item.scene) {
         // Scenes deleted from the Index entry's own "Delete" flow never
@@ -683,6 +692,112 @@ function baseReducer(state: GrimoireDataset, action: Action): GrimoireDataset {
         return { ...state, scenes, recentlyDeleted }
       }
       return { ...state, recentlyDeleted }
+    }
+    case 'RESOLVE_RESTORE_COLLISION': {
+      const item = state.recentlyDeleted.find((d) => d.id === action.deletedItemId)
+      if (!item) return state
+      const recentlyDeletedWithoutItem = state.recentlyDeleted.filter((d) => d.id !== action.deletedItemId)
+
+      if (action.resolution === 'discard') {
+        // The trashed item is gone for good — NOT re-added to Recently
+        // Deleted (that would just be the same choice again next time).
+        // The live item it collided with is untouched.
+        return { ...state, recentlyDeleted: recentlyDeletedWithoutItem }
+      }
+
+      // 'swap' — re-derive the collision against CURRENT state rather than
+      // trusting whatever the UI saw when the dialog was opened (it may be
+      // stale by the time the user actually picks an outcome). If the
+      // collision has resolved itself in the meantime (the live item was
+      // independently deleted), there's nothing left to swap out — restore
+      // plainly instead of silently doing nothing.
+      const collision = findRestoreCollision(state, item)
+      if (!collision) {
+        return baseReducer(state, { type: 'RESTORE_DELETED_ITEM', id: action.deletedItemId })
+      }
+
+      if (item.kind === 'scene' && item.scene && collision.kind === 'scene') {
+        const liveId = collision.live.id
+        const evicted: DeletedItem = {
+          id: makeId(),
+          kind: 'scene',
+          projectId: collision.live.projectId,
+          label: sceneHeading(state.scenes, collision.live),
+          deletedAt: nowIso(),
+          scene: collision.live,
+        }
+        return {
+          ...state,
+          scenes: state.scenes.map((s) => (s.id === liveId ? item.scene! : s)),
+          recentlyDeleted: [evicted, ...recentlyDeletedWithoutItem],
+        }
+      }
+      if (item.kind === 'chapter' && item.chapter && collision.kind === 'chapter') {
+        const liveId = collision.live.id
+        const evicted: DeletedItem = {
+          id: makeId(),
+          kind: 'chapter',
+          projectId: collision.live.projectId,
+          label: collision.live.name || 'Unnamed chapter',
+          deletedAt: nowIso(),
+          chapter: collision.live,
+        }
+        return {
+          ...state,
+          chapters: state.chapters.map((c) => (c.id === liveId ? item.chapter! : c)),
+          recentlyDeleted: [evicted, ...recentlyDeletedWithoutItem],
+        }
+      }
+      if (item.kind === 'indexEntry' && item.indexEntry && collision.kind === 'indexEntry') {
+        const restoredId = item.indexEntry.id
+        const evictedId = collision.live.id
+        const evicted: DeletedItem = {
+          id: makeId(),
+          kind: 'indexEntry',
+          projectId: collision.live.projectId,
+          label: collision.live.name,
+          deletedAt: nowIso(),
+          indexEntry: collision.live,
+        }
+        const backlinks = item.indexEntryBacklinks ?? []
+        return {
+          ...state,
+          indexEntries: [
+            ...state.indexEntries
+              .filter((e) => e.id !== evictedId)
+              .map((e) =>
+                backlinks.includes(e.id) && !e.seeAlso.includes(restoredId)
+                  ? { ...e, seeAlso: [...e.seeAlso, restoredId] }
+                  : e,
+              ),
+            item.indexEntry,
+          ],
+          recentlyDeleted: [evicted, ...recentlyDeletedWithoutItem],
+        }
+      }
+      if (item.kind === 'cardContent' && item.cardContent && collision.kind === 'cardContent') {
+        const { sceneId, cardKey, isCustomCard, value, cardLabel } = item.cardContent
+        const scene = state.scenes.find((s) => s.id === sceneId)
+        if (!scene) return { ...state, recentlyDeleted: recentlyDeletedWithoutItem }
+        const evicted: DeletedItem = {
+          id: makeId(),
+          kind: 'cardContent',
+          projectId: scene.projectId,
+          label: `${cardLabel} — ${sceneHeading(state.scenes, scene)}`,
+          deletedAt: nowIso(),
+          cardContent: { sceneId, cardKey, cardLabel, isCustomCard, value: collision.live.value },
+        }
+        const scenes = state.scenes.map((s) => {
+          if (s.id !== sceneId) return s
+          if (isCustomCard) return { ...s, customCardContent: { ...s.customCardContent, [cardKey]: value }, updatedAt: nowIso() }
+          return { ...s, [cardKey]: value, updatedAt: nowIso() }
+        })
+        return { ...state, scenes, recentlyDeleted: [evicted, ...recentlyDeletedWithoutItem] }
+      }
+      // Kind mismatch between the deleted item and what it now collides
+      // with shouldn't be reachable, but never leave the deleted record
+      // stuck in limbo if it somehow happens.
+      return { ...state, recentlyDeleted: recentlyDeletedWithoutItem }
     }
     case 'EMPTY_RECENTLY_DELETED': {
       return { ...state, recentlyDeleted: [] }
