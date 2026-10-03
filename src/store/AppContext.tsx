@@ -15,6 +15,7 @@ import {
   type Chapter,
   type ConnectionTarget,
   type CustomCardDef,
+  type DeletedItem,
   type EntryBehavior,
   type GrimoireDataset,
   type IndexEntry,
@@ -24,9 +25,9 @@ import {
   type SceneKind,
   type SceneStatus,
 } from '../types'
-import { loadDataset, saveDataset, migrateDataset } from './db'
+import { loadDataset, saveDataset, migrateDataset, purgeExpiredDeleted } from './db'
 import { makeId, nowIso } from '../utils/id'
-import { computeInsertIndex, groupMembers, sceneGroupOf, swapScenePositions, type InsertPosition } from '../utils/tocOrdering'
+import { computeInsertIndex, groupMembers, sceneGroupOf, swapScenePositions, sceneHeading, type InsertPosition } from '../utils/tocOrdering'
 import { projectChapters } from '../utils/chapters'
 
 type Action =
@@ -74,6 +75,9 @@ type Action =
   | { type: 'RENAME_CHAPTER'; id: string; name: string }
   | { type: 'DELETE_CHAPTER'; id: string }
   | { type: 'REORDER_CHAPTER'; id: string; projectId: string; direction: 'up' | 'down' }
+  | { type: 'CLEAR_CARD_CONTENT'; sceneId: string; cardKey: string; cardLabel: string; isCustomCard: boolean }
+  | { type: 'RESTORE_DELETED_ITEM'; id: string }
+  | { type: 'EMPTY_RECENTLY_DELETED' }
 
 /** Ensures the project has at least one chapter, returning the LAST one's id (creating an unnamed one if none exist yet) plus the possibly-extended chapters array. */
 function ensureLastChapter(chapters: Chapter[], projectId: string): { chapterId: string; chapters: Chapter[] } {
@@ -114,7 +118,7 @@ function chapterIdForInsert(
   return ensureLastChapter(chapters, projectId)
 }
 
-function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
+function baseReducer(state: GrimoireDataset, action: Action): GrimoireDataset {
   switch (action.type) {
     case 'ADD_PROJECT': {
       const project: Project = {
@@ -285,7 +289,21 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       // Connections in OTHER scenes pointing at this one are intentionally left
       // in place — they degrade gracefully to a visible "broken" chip rather
       // than being silently cascade-repaired.
-      return { ...state, scenes: state.scenes.filter((s) => s.id !== action.id) }
+      const scene = state.scenes.find((s) => s.id === action.id)
+      if (!scene) return state
+      const deleted: DeletedItem = {
+        id: makeId(),
+        kind: 'scene',
+        projectId: scene.projectId,
+        label: sceneHeading(state.scenes, scene),
+        deletedAt: nowIso(),
+        scene,
+      }
+      return {
+        ...state,
+        scenes: state.scenes.filter((s) => s.id !== action.id),
+        recentlyDeleted: [deleted, ...state.recentlyDeleted],
+      }
     }
     case 'ADD_CONNECTION': {
       return {
@@ -383,11 +401,24 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       // the graceful degraded (plain, unhighlighted) rendering automatically,
       // the same way a broken scene Connection degrades. Also strip it from any
       // other entry's seeAlso list so those links don't dangle in the Index UI.
+      const entry = state.indexEntries.find((e) => e.id === action.id)
+      if (!entry) return state
+      const backlinkedFrom = state.indexEntries.filter((e) => e.seeAlso.includes(action.id)).map((e) => e.id)
+      const deleted: DeletedItem = {
+        id: makeId(),
+        kind: 'indexEntry',
+        projectId: entry.projectId,
+        label: entry.name,
+        deletedAt: nowIso(),
+        indexEntry: entry,
+        indexEntryBacklinks: backlinkedFrom,
+      }
       return {
         ...state,
         indexEntries: state.indexEntries
           .filter((e) => e.id !== action.id)
           .map((e) => (e.seeAlso.includes(action.id) ? { ...e, seeAlso: e.seeAlso.filter((id) => id !== action.id) } : e)),
+        recentlyDeleted: [deleted, ...state.recentlyDeleted],
       }
     }
     case 'ADD_SEE_ALSO_LINK': {
@@ -518,7 +549,21 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       // can never silently take its scenes down with it.
       const hasScenes = state.scenes.some((s) => s.chapterId === action.id)
       if (hasScenes) return state
-      return { ...state, chapters: state.chapters.filter((c) => c.id !== action.id) }
+      const chapter = state.chapters.find((c) => c.id === action.id)
+      if (!chapter) return state
+      const deleted: DeletedItem = {
+        id: makeId(),
+        kind: 'chapter',
+        projectId: chapter.projectId,
+        label: chapter.name || 'Unnamed chapter',
+        deletedAt: nowIso(),
+        chapter,
+      }
+      return {
+        ...state,
+        chapters: state.chapters.filter((c) => c.id !== action.id),
+        recentlyDeleted: [deleted, ...state.recentlyDeleted],
+      }
     }
     case 'REORDER_CHAPTER': {
       const projectChs = projectChapters(state.chapters, action.projectId)
@@ -574,9 +619,84 @@ function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
 
       return { ...state, chapters, scenes }
     }
+    case 'CLEAR_CARD_CONTENT': {
+      const scene = state.scenes.find((s) => s.id === action.sceneId)
+      if (!scene) return state
+      const value = action.isCustomCard ? (scene.customCardContent[action.cardKey] ?? '') : (scene as unknown as Record<string, string>)[action.cardKey]
+      if (!value || !value.trim()) return state
+      const deleted: DeletedItem = {
+        id: makeId(),
+        kind: 'cardContent',
+        projectId: scene.projectId,
+        label: `${action.cardLabel} — ${sceneHeading(state.scenes, scene)}`,
+        deletedAt: nowIso(),
+        cardContent: { sceneId: scene.id, cardKey: action.cardKey, cardLabel: action.cardLabel, isCustomCard: action.isCustomCard, value },
+      }
+      const scenes = state.scenes.map((s) => {
+        if (s.id !== action.sceneId) return s
+        if (action.isCustomCard) {
+          return { ...s, customCardContent: { ...s.customCardContent, [action.cardKey]: '' }, updatedAt: nowIso() }
+        }
+        return { ...s, [action.cardKey]: '', updatedAt: nowIso() }
+      })
+      return { ...state, scenes, recentlyDeleted: [deleted, ...state.recentlyDeleted] }
+    }
+    case 'RESTORE_DELETED_ITEM': {
+      const item = state.recentlyDeleted.find((d) => d.id === action.id)
+      if (!item) return state
+      const recentlyDeleted = state.recentlyDeleted.filter((d) => d.id !== action.id)
+      if (item.kind === 'scene' && item.scene) {
+        // Scenes deleted from the Index entry's own "Delete" flow never
+        // remove the scene itself; only DELETE_SCENE does, so there's no
+        // ambiguity about which array a restored scene belongs in. Appended
+        // at the end — its original position isn't tracked, matching how a
+        // deleted-and-restored Index entry doesn't restore old seeAlso
+        // ordering either.
+        return { ...state, scenes: [...state.scenes, item.scene], recentlyDeleted }
+      }
+      if (item.kind === 'chapter' && item.chapter) {
+        return { ...state, chapters: [...state.chapters, item.chapter], recentlyDeleted }
+      }
+      if (item.kind === 'indexEntry' && item.indexEntry) {
+        const restoredId = item.indexEntry.id
+        const backlinks = item.indexEntryBacklinks ?? []
+        return {
+          ...state,
+          indexEntries: [
+            ...state.indexEntries.map((e) =>
+              backlinks.includes(e.id) && !e.seeAlso.includes(restoredId)
+                ? { ...e, seeAlso: [...e.seeAlso, restoredId] }
+                : e,
+            ),
+            item.indexEntry,
+          ],
+          recentlyDeleted,
+        }
+      }
+      if (item.kind === 'cardContent' && item.cardContent) {
+        const { sceneId, cardKey, isCustomCard, value } = item.cardContent
+        const scenes = state.scenes.map((s) => {
+          if (s.id !== sceneId) return s
+          if (isCustomCard) return { ...s, customCardContent: { ...s.customCardContent, [cardKey]: value }, updatedAt: nowIso() }
+          return { ...s, [cardKey]: value, updatedAt: nowIso() }
+        })
+        return { ...state, scenes, recentlyDeleted }
+      }
+      return { ...state, recentlyDeleted }
+    }
+    case 'EMPTY_RECENTLY_DELETED': {
+      return { ...state, recentlyDeleted: [] }
+    }
     default:
       return state
   }
+}
+
+/** Purges expired Recently Deleted records after every action — cheap (a single array filter, skipped entirely when the list is already empty) and keeps the 30-day retention window honest without a separate timer. */
+function reducer(state: GrimoireDataset, action: Action): GrimoireDataset {
+  const next = baseReducer(state, action)
+  if (next.recentlyDeleted.length === 0) return next
+  return { ...next, recentlyDeleted: purgeExpiredDeleted(next.recentlyDeleted) }
 }
 
 interface AppContextValue {
@@ -722,6 +842,9 @@ function mergeDatasets(
       ...e,
       id: makeId(),
     })),
+    // Recently Deleted is a local safety net, not shared project data — an
+    // import never resurrects or merges in someone else's trash.
+    recentlyDeleted: local.recentlyDeleted,
     meta: local.meta,
   }
 }

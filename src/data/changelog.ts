@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.4.0'
+export const APP_VERSION = '2.5.0'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,19 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.5.0',
+    date: '2026-10-03',
+    changes: [
+      'Added "###" subheadings — a second heading level under "##", shown smaller and in gold with automatic sentence-case capitalization, for breaking a heading into sub-sections like "##Time of day" / "###Early evening."',
+      'Back navigation (the in-app arrow and the system back gesture) now always goes up exactly one level of the Bookshelf > Table of Contents > Scene Page > Card hierarchy, no matter how many cards, scenes, or Index entries were visited in between — jumping to another scene via a Connection or an Index entry, or opening the Index from a Scene Page, no longer stacks extra steps that "Done" or back then has to unwind one at a time.',
+      'Fixed: a Connection\'s saved note could show its raw [[@id|Name]] storage syntax on the Connections card instead of a resolved link — it now renders through the same shared renderer as every other card, live, without needing to reopen the note editor.',
+      'Added "Recently Deleted" to Settings — a 30-day safety net for a deleted scene, chapter, Index entry, or cleared card content, with Restore per item and an Empty Now to clear it immediately. This is in addition to, not instead of, the delete confirmation you already see.',
+      '"Preview rendered links" moved next to the card editor itself, away from "Done," so a mistaken tap while checking the preview can no longer exit editing.',
+      'Version History in Settings now shows only the latest release by default, with "Show more" still available for the full history.',
+      'Repository remote updated to match GitHub\'s corrected casing (Grimoire-).',
+    ],
+  },
   {
     version: '2.4.0',
     date: '2026-09-28',

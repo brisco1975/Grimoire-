@@ -4,6 +4,7 @@ import {
   SCHEMA_VERSION,
   type Chapter,
   type CustomCardDef,
+  type DeletedItem,
   type GrimoireDataset,
   type Project,
   type Scene,
@@ -13,6 +14,21 @@ import { makeId } from '../utils/id'
 import { sceneGroupOf } from '../utils/tocOrdering'
 
 const STORAGE_KEY = 'grimoire-dataset-v1'
+
+export const RECENTLY_DELETED_RETENTION_DAYS = 30
+
+/** Drops any Recently Deleted record older than the retention window — called on every load so the list never silently grows forever. */
+export function purgeExpiredDeleted(items: DeletedItem[]): DeletedItem[] {
+  const cutoff = Date.now() - RECENTLY_DELETED_RETENTION_DAYS * 24 * 60 * 60 * 1000
+  return items.filter((item) => new Date(item.deletedAt).getTime() >= cutoff)
+}
+
+function migrateRecentlyDeleted(raw: unknown): DeletedItem[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as DeletedItem[]).filter(
+    (item) => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.deletedAt === 'string',
+  )
+}
 
 /**
  * Natural sort so old free-text scene numbers like "2", "10", "2a", "3.5"
@@ -255,6 +271,7 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
       createdAt: (e.createdAt as string) ?? new Date().toISOString(),
       updatedAt: (e.updatedAt as string) ?? new Date().toISOString(),
     })),
+    recentlyDeleted: migrateRecentlyDeleted(d.recentlyDeleted),
     meta: {
       lastExportedAt: (rawMeta.lastExportedAt as string | null | undefined) ?? null,
       lastExportedHash: (rawMeta.lastExportedHash as string | null | undefined) ?? null,
@@ -267,7 +284,8 @@ export async function loadDataset(): Promise<GrimoireDataset> {
   const raw = await get(STORAGE_KEY)
   if (!raw) return createEmptyDataset()
   try {
-    return migrateDataset(raw)
+    const dataset = migrateDataset(raw)
+    return { ...dataset, recentlyDeleted: purgeExpiredDeleted(dataset.recentlyDeleted) }
   } catch {
     return createEmptyDataset()
   }

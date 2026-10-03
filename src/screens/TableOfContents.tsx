@@ -150,7 +150,7 @@ export default function TableOfContents() {
   if (!project || !projectId) {
     return (
       <div className="flex-1 flex flex-col">
-        <AppHeader title="Not found" onBack={() => navigate('/')} />
+        <AppHeader title="Not found" onBack={() => navigate(-1)} />
         <div className="p-6 text-parchment-muted">This project no longer exists.</div>
       </div>
     )
@@ -357,7 +357,7 @@ export default function TableOfContents() {
 
   return (
     <div className="flex-1 flex flex-col">
-      <AppHeader title={project.title} onBack={() => navigate('/')} />
+      <AppHeader title={project.title} onBack={() => navigate(-1)} />
 
       <div className="flex items-center justify-end gap-4 px-4 pt-2 text-sm">
         <button

@@ -169,33 +169,59 @@ export function indexEntriesForProject(dataset: GrimoireDataset, projectId: stri
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// "##" heading support — deliberately narrow: a line whose first non-marker
-// characters are "##" is a heading, marker stripped, everything after it on
-// that line rendered in the heading style. Nothing else about markdown is
-// recognized (no bold/italic/lists) — this is a purpose-built line marker,
-// not a markdown parser. Entirely an AT-REST rendering concern (see
-// LinkedText) — the editing textarea always shows raw "##text", exactly
-// like bracket-link tokens always show as plain "[[Name]]" while editing.
-// That split is what keeps this change from ever touching the bracket-
-// linking engine above: this operates on whole LINES before any bracket
-// segment gets parsed, so bracket-linking still runs completely unmodified
-// on each line's content.
+// "##" / "###" heading support — deliberately narrow: a line whose first
+// non-marker characters are a run of two or more "#" is a heading, marker
+// stripped, everything after it on that line rendered in heading style.
+// Nothing else about markdown is recognized (no bold/italic/lists) — this
+// is a purpose-built line marker, not a markdown parser. Entirely an
+// AT-REST rendering concern (see LinkedText) — the editing textarea always
+// shows raw "##text"/"###text", exactly like bracket-link tokens always
+// show as plain "[[Name]]" while editing. That split is what keeps this
+// change from ever touching the bracket-linking engine above: this
+// operates on whole LINES before any bracket segment gets parsed, so
+// bracket-linking still runs completely unmodified on each line's content.
+//
+// Two distinct levels, by marker length — the LONGEST leading run of "#" is
+// matched first (greedy), so "###" is read as one level-3 marker, never as
+// a level-2 "##" plus a leftover "#" character:
+//   "##"  (exactly two)   -> level 2, the primary heading.
+//   "###" (three or more) -> level 3, a subheading.
+// A single "#" matches neither and is left as plain typed text.
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface DisplayLine {
-  /** Line content with the "##" marker (and one following space, if any) stripped when heading is true. */
+  /** Line content with the "#" marker run (and one following space, if any) stripped when level > 0. */
   text: string
-  heading: boolean
+  /** 0 = plain body text, 2 = "##" heading, 3 = "###" subheading. */
+  level: 0 | 2 | 3
 }
 
-const HEADING_LINE_RE = /^##\s?(.*)$/
+const HEADING_LINE_RE = /^(#{2,})\s?(.*)$/
 
-/** Splits raw text into lines, flagging any line opening with "##" as a heading. */
+/** Splits raw text into lines, flagging each as plain, a "##" heading, or a "###" subheading. */
 export function splitDisplayLines(raw: string): DisplayLine[] {
   return raw.split('\n').map((line) => {
     const m = HEADING_LINE_RE.exec(line)
-    return m ? { text: m[1], heading: true } : { text: line, heading: false }
+    if (!m) return { text: line, level: 0 }
+    return { text: m[2], level: m[1].length === 2 ? 2 : 3 }
   })
+}
+
+/**
+ * Subheading auto-capitalization: the rendered "###" line always reads in
+ * sentence case, regardless of how it was typed — matching the spec's
+ * "automatic, like ##, but not full caps" requirement. This only ever
+ * touches the FIRST character of the first plain-text segment; a line that
+ * opens with a bracket-link is left alone; a resolved link's cachedDisplay
+ * is frozen text (see the module comment above) that nothing should ever
+ * rewrite, capitalization included.
+ */
+export function capitalizeFirstLetter(segments: LinkSegment[]): LinkSegment[] {
+  if (segments.length === 0) return segments
+  const first = segments[0]
+  if (first.type !== 'text' || first.value.length === 0) return segments
+  const capitalized = first.value[0].toUpperCase() + first.value.slice(1)
+  return [{ type: 'text', value: capitalized }, ...segments.slice(1)]
 }
 
 export interface HeadingParts {

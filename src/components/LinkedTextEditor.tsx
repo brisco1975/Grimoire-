@@ -227,6 +227,14 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
       updatedAt: nowIso(),
     }
     dispatch({ type: 'ADD_INDEX_ENTRY', entry })
+    // Update the ref in this same synchronous tick, not just via the effect
+    // (which only runs after React's next render). A "full" field's commit()
+    // is debounced 400ms out, plenty of time for that effect to catch up —
+    // but a "compact" field's commit() runs immediately, in this exact same
+    // handler, and would otherwise still see the pre-creation entry list and
+    // leave the word unresolved as plain "[[Name]]" text instead of a real
+    // "[[@id|Name]]" token.
+    entriesRef.current = [...entriesRef.current, entry]
     completeLink(name)
   }
 
@@ -235,7 +243,11 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
     const { name, existing } = collision
     const already = existing.aliases.some((a) => a.toLowerCase() === name.toLowerCase()) || existing.name.toLowerCase() === name.toLowerCase()
     if (!already) {
-      dispatch({ type: 'UPDATE_INDEX_ENTRY', id: existing.id, patch: { aliases: [...existing.aliases, name] } })
+      const updated = { ...existing, aliases: [...existing.aliases, name] }
+      dispatch({ type: 'UPDATE_INDEX_ENTRY', id: existing.id, patch: { aliases: updated.aliases } })
+      // Same same-tick concern as createEntry() above — a compact field's
+      // commit() runs synchronously and needs the new alias visible now.
+      entriesRef.current = entriesRef.current.map((e) => (e.id === existing.id ? updated : e))
     }
     completeLink(name)
     setCollision(null)

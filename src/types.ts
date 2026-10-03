@@ -9,7 +9,7 @@
 // IndexEntry — populated only once the bracket-linking engine exists).
 // ─────────────────────────────────────────────────────────────────────────
 
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 export type IndexEntryType = 'person' | 'place' | 'thing'
 
@@ -176,12 +176,47 @@ export interface IndexEntry {
   updatedAt: string
 }
 
+/** What kind of thing a Recently Deleted record holds. */
+export type DeletedItemKind = 'scene' | 'chapter' | 'indexEntry' | 'cardContent'
+
+export interface DeletedCardContentPayload {
+  sceneId: string
+  /** A built-in TextCardKey, or a custom card's id. */
+  cardKey: string
+  cardLabel: string
+  isCustomCard: boolean
+  value: string
+}
+
+/**
+ * A snapshot of something the user deleted, kept around as a safety net —
+ * see Settings' "Recently Deleted" section. Deletion still removes the
+ * item from its live array/field immediately (every existing delete
+ * confirmation and cascading side effect is unchanged); this is purely an
+ * ADDITIONAL copy kept for restoring, auto-purged after 30 days.
+ */
+export interface DeletedItem {
+  id: string
+  kind: DeletedItemKind
+  projectId: string
+  /** Precomputed at deletion time (e.g. a scene's numbered heading) so display never depends on data that may itself have changed or been deleted since. */
+  label: string
+  deletedAt: string
+  scene?: Scene
+  chapter?: Chapter
+  indexEntry?: IndexEntry
+  /** Other Index entries whose `seeAlso` referenced this one at the moment of deletion — restored alongside it so "See Also" links come back too. */
+  indexEntryBacklinks?: string[]
+  cardContent?: DeletedCardContentPayload
+}
+
 export interface GrimoireDataset {
   schemaVersion: number
   projects: Project[]
   chapters: Chapter[]
   scenes: Scene[]
   indexEntries: IndexEntry[]
+  recentlyDeleted: DeletedItem[]
   meta: {
     lastExportedAt: string | null
     /**
@@ -202,6 +237,7 @@ export function createEmptyDataset(): GrimoireDataset {
     chapters: [],
     scenes: [],
     indexEntries: [],
+    recentlyDeleted: [],
     meta: { lastExportedAt: null, lastExportedHash: null, hasSeenLinkHint: false },
   }
 }

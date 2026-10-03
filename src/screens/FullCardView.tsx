@@ -2,9 +2,11 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import AppHeader from '../components/AppHeader'
+import ConfirmDialog from '../components/ConfirmDialog'
 import LinkedText from '../components/LinkedText'
 import LinkedTextEditor, { type LinkedTextEditorHandle } from '../components/LinkedTextEditor'
 import { TEXT_CARDS, type TextCardKey } from '../data/cards'
+import { RECENTLY_DELETED_RETENTION_DAYS } from '../store/db'
 import { sceneHeading } from '../utils/tocOrdering'
 
 export default function FullCardView() {
@@ -40,6 +42,7 @@ export default function FullCardView() {
   // a genuine full, untruncated at-rest view right on the card itself,
   // without changing the default "tap card, land in edit mode" flow.
   const [previewing, setPreviewing] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const projectEntries = useMemo(
     () => (projectId ? dataset.indexEntries.filter((e) => e.projectId === projectId) : []),
@@ -78,6 +81,18 @@ export default function FullCardView() {
     setPreviewing(true)
   }
 
+  function clearContent() {
+    if (!scene || !cardMeta) return
+    dispatch({
+      type: 'CLEAR_CARD_CONTENT',
+      sceneId: scene.id,
+      cardKey: cardMeta.key,
+      cardLabel: cardMeta.label,
+      isCustomCard: !!customCard,
+    })
+    setConfirmClear(false)
+  }
+
   return (
     <div className="flex-1 flex flex-col page-turn">
       <AppHeader title={cardMeta.label} onBack={leave} />
@@ -103,6 +118,18 @@ export default function FullCardView() {
       )}
 
       <div className="flex-1 flex flex-col px-4 py-4">
+        {/* Grouped with the editor itself, well above "Done" — a mis-tap
+            here only toggles the preview, never exits editing. Previously
+            this sat at the opposite bottom corner from "Done" with similar
+            visual weight, risking an accidental exit when the user meant to
+            check the preview. */}
+        <button
+          type="button"
+          onClick={() => (previewing ? setPreviewing(false) : enterPreview())}
+          className="self-start mb-2 text-gold-dim hover:text-gold text-sm transition-colors"
+        >
+          {previewing ? '← Back to editing' : 'Preview rendered links →'}
+        </button>
         {previewing ? (
           <div
             onClick={() => setPreviewing(false)}
@@ -130,14 +157,18 @@ export default function FullCardView() {
             }}
           />
         )}
-        <div className="flex justify-between items-center pt-4">
-          <button
-            type="button"
-            onClick={() => (previewing ? setPreviewing(false) : enterPreview())}
-            className="text-gold-dim hover:text-gold text-sm transition-colors"
-          >
-            {previewing ? '← Back to editing' : 'Preview rendered links →'}
-          </button>
+        <div className="pt-6 mt-2 border-t border-inset flex justify-between items-center">
+          {value.trim() ? (
+            <button
+              type="button"
+              onClick={() => setConfirmClear(true)}
+              className="text-parchment-muted hover:text-accent-bright text-sm transition-colors"
+            >
+              Clear content
+            </button>
+          ) : (
+            <span />
+          )}
           <button
             type="button"
             onClick={leave}
@@ -147,6 +178,15 @@ export default function FullCardView() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmClear}
+        title="Clear this card's content?"
+        message={`Everything written in ${cardMeta.label} will be cleared. It moves to Recently Deleted in Settings, where it can be restored for ${RECENTLY_DELETED_RETENTION_DAYS} days.`}
+        confirmLabel="Clear"
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={clearContent}
+      />
     </div>
   )
 }

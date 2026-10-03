@@ -37,7 +37,7 @@ export default function IndexScreen() {
   if (!project || !projectId) {
     return (
       <div className="flex-1 flex flex-col">
-        <AppHeader title="Not found" onBack={() => navigate('/')} />
+        <AppHeader title="Not found" onBack={() => navigate(-1)} />
         <div className="p-6 text-parchment-muted">This project no longer exists.</div>
       </div>
     )
@@ -69,7 +69,12 @@ export default function IndexScreen() {
 
   return (
     <div className="flex-1 flex flex-col">
-      <AppHeader title={`${project.title} — Index`} onBack={() => navigate(`/project/${projectId}`)} />
+      {/* Index always sits directly above the Table of Contents in the back
+          hierarchy, whether it was opened from the Table of Contents or
+          from a Scene Page (see IndexFAB's `replace` prop) — so a pop here
+          always reaches the Table of Contents, matching the in-app arrow
+          to the system back gesture. */}
+      <AppHeader title={`${project.title} — Index`} onBack={() => navigate(-1)} />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 max-w-2xl mx-auto w-full flex flex-col gap-6">
         {entries.length > 0 && (
@@ -317,7 +322,11 @@ export default function IndexScreen() {
                     <li key={s.id}>
                       <button
                         type="button"
-                        onClick={() => navigate(`/project/${s.projectId}/scene/${s.id}`)}
+                        // replace, not push — jumping to a scene from here is a
+                        // lateral move (Index already sits where the Table of
+                        // Contents would), so it must not stack a second entry
+                        // on top of Index's; see IndexFAB's doc comment.
+                        onClick={() => navigate(`/project/${s.projectId}/scene/${s.id}`, { replace: true })}
                         className="text-link hover:underline underline-offset-2 text-sm"
                       >
                         → {sceneHeading(dataset.scenes, s)}

@@ -214,9 +214,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                       className="rounded border border-dashed border-gold-dim bg-surface-2 px-3 py-2 flex flex-col gap-0.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-gold text-sm font-medium">
-                          ✎ Unwritten: {connection.unwrittenDescription}
-                        </span>
+                        <span className="text-gold text-sm font-medium">✎ Unwritten</span>
                         <div className="flex items-center gap-3 shrink-0">
                           <button
                             type="button"
@@ -248,8 +246,13 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                           </span>
                         </div>
                       </div>
+                      <div className="text-gold text-sm">
+                        <LinkedText text={connection.unwrittenDescription ?? ''} entries={projectEntries} />
+                      </div>
                       {connection.note && (
-                        <p className="text-parchment-muted text-sm m-0 whitespace-pre-wrap">{connection.note}</p>
+                        <div className="text-parchment-muted text-sm">
+                          <LinkedText text={connection.note} entries={projectEntries} />
+                        </div>
                       )}
                     </div>
                   )
@@ -262,7 +265,15 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                     <div className="flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() => navigate(`/project/${target.projectId}/scene/${target.id}`)}
+                        // replace, not push — jumping to a connected scene is a
+                        // lateral move at the same hierarchy level, not a step
+                        // deeper. This Scene Page's own history entry already
+                        // sits directly on the Table of Contents, so replacing
+                        // it keeps that invariant true for the scene we land
+                        // on: one pop still reaches the Table of Contents,
+                        // instead of stacking scenes the user has to back out
+                        // of one at a time.
+                        onClick={() => navigate(`/project/${target.projectId}/scene/${target.id}`, { replace: true })}
                         className="text-link hover:underline underline-offset-2 text-sm font-medium text-left"
                       >
                         → {sceneHeading(dataset.scenes, target)}
@@ -292,7 +303,9 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                       </div>
                     </div>
                     {connection.note && (
-                      <p className="text-parchment-muted text-sm m-0 whitespace-pre-wrap">{connection.note}</p>
+                      <div className="text-parchment-muted text-sm">
+                        <LinkedText text={connection.note} entries={projectEntries} />
+                      </div>
                     )}
                   </div>
                 ) : (
@@ -418,7 +431,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {
           dispatch({ type: 'DELETE_SCENE', id: scene.id })
-          navigate(`/project/${projectId}`)
+          navigate(`/project/${projectId}`, { replace: true })
         }}
       />
 

@@ -32,7 +32,7 @@ export default function ScenePage() {
   if (!project || !scene) {
     return (
       <div className="flex-1 flex flex-col">
-        <AppHeader title="Not found" onBack={() => navigate(projectId ? `/project/${projectId}` : '/')} />
+        <AppHeader title="Not found" onBack={() => navigate(-1)} />
         <div className="p-6 text-parchment-muted">This scene no longer exists.</div>
       </div>
     )
@@ -40,9 +40,16 @@ export default function ScenePage() {
 
   return (
     <div className="flex-1 flex flex-col page-turn">
-      <AppHeader title={sceneHeading(dataset.scenes, scene)} onBack={() => navigate(`/project/${projectId}`)} />
+      {/* A pop (navigate(-1)) rather than a fixed-destination push — see
+          the back-navigation hierarchy note on SceneDetail's own connection
+          jump and IndexScreen's "Appears In" jump: every way of LANDING on
+          a Scene Page (the Table of Contents, a Connection jump, an Index
+          jump) keeps the Table of Contents as its immediate history entry,
+          so one pop from here always reaches it, matching the in-app arrow
+          to the Android system back gesture instead of diverging from it. */}
+      <AppHeader title={sceneHeading(dataset.scenes, scene)} onBack={() => navigate(-1)} />
       <SceneDetail projectId={projectId!} scene={scene} />
-      <IndexFAB projectId={projectId!} />
+      <IndexFAB projectId={projectId!} replace />
     </div>
   )
 }

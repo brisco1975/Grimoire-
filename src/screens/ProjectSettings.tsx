@@ -43,7 +43,7 @@ export default function ProjectSettings() {
   if (!project || !projectId) {
     return (
       <div className="flex-1 flex flex-col">
-        <AppHeader title="Not found" onBack={() => navigate('/')} />
+        <AppHeader title="Not found" onBack={() => navigate(-1)} />
         <div className="p-6 text-parchment-muted">This project no longer exists.</div>
       </div>
     )
@@ -77,7 +77,7 @@ export default function ProjectSettings() {
 
   return (
     <div className="flex-1 flex flex-col">
-      <AppHeader title={`${project.title} — Cards`} onBack={() => navigate(`/project/${projectId}`)} showSettings={false} />
+      <AppHeader title={`${project.title} — Cards`} onBack={() => navigate(-1)} showSettings={false} />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-6 max-w-2xl mx-auto w-full">
         <section className="rounded-lg border border-inset bg-surface p-4">

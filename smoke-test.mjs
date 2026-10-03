@@ -245,10 +245,15 @@ async function main() {
     await page.locator('[role="dialog"]').click({ position: { x: 5, y: 820 } })
     await page.waitForTimeout(200)
 
-    // The Index screen's own Back button is a fixed shortcut to the project's
-    // Table of Contents (not history-based) — use browser-back to actually
-    // return to the scene we came from, same as a real back gesture would.
+    // Index always sits directly above the Table of Contents in the back
+    // hierarchy now, regardless of whether it was opened from the Table of
+    // Contents or (as here) from a Scene Page — so browser-back from Index
+    // lands on the Table of Contents, not the scene we opened it from, and
+    // the in-app arrow and the system back gesture agree on that.
     await page.goBack()
+    await page.waitForSelector('text=+ New Entry')
+    await page.click('text=1 — The Opening')
+    await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
     const previewAfterRename = await page.locator('[role="button"]:has-text("Actions")').first().innerText()
     log(
@@ -277,6 +282,9 @@ async function main() {
     log('index entry deleted')
 
     await page.goBack()
+    await page.waitForSelector('text=+ New Entry')
+    await page.click('text=1 — The Opening')
+    await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
     await page.click('text=Actions')
     await page.waitForSelector('textarea')
@@ -714,9 +722,12 @@ async function main() {
     const previewBox = page.locator('.whitespace-pre-wrap').first()
     const headingEls = previewBox.locator('.font-heading')
     const headingTexts = await headingEls.allInnerTexts()
+    // "##" headings render full-capitals (a CSS text-transform, which
+    // Chromium's innerText reflects) — the underlying text is still typed
+    // exactly as "Day - zero.", just displayed upper-cased.
     log(
       '"##" lines render as distinct headings, one per line, with the marker stripped',
-      headingTexts.some((t) => t.trim() === 'Day - zero.') && headingTexts.some((t) => t.trim() === 'Day - one.'),
+      headingTexts.some((t) => t.trim() === 'DAY - ZERO.') && headingTexts.some((t) => t.trim() === 'DAY - ONE.'),
     )
     const bodyText = await previewBox.innerText()
     log('non-heading lines stay plain body text (not styled as headings)', bodyText.includes('Quiet morning.') && bodyText.includes('Still here.'))
@@ -735,19 +746,27 @@ async function main() {
     const labelText = (await labelSpan.innerText()).trim()
     const valueText = (await valueSpan.innerText()).trim()
     log(
-      'heading line splits into a green label ("Day -") and a gold value ("zero.")',
-      labelText === 'Day -' && valueText === 'zero.',
+      'heading line splits into a green label ("DAY -") and a gold value ("ZERO.")',
+      labelText === 'DAY -' && valueText === 'ZERO.',
     )
     const labelColor = await labelSpan.evaluate((el) => getComputedStyle(el).color)
     const valueColor = await valueSpan.evaluate((el) => getComputedStyle(el).color)
     log('heading label and heading value render in genuinely different colors', labelColor !== valueColor)
 
-    // Plain non-heading body lines (no "##", e.g. "Quiet morning...") should
-    // read the same gold as a heading's value — body text is body text
-    // whether or not it's the tail of a "##" line.
-    const bodyLine = previewBox.locator('.text-gold', { hasText: 'Quiet morning.' }).first()
-    const bodyLineFound = await bodyLine.count()
-    log('non-heading body line also renders gold, matching a heading value\'s color', bodyLineFound > 0)
+    // Plain non-heading body lines (no "##") are always ordinary body text,
+    // unaffected by a heading's styling — NOT tinted gold just because a
+    // "##" line appears elsewhere in the same field. Find the exact line
+    // block (a direct child of the preview box) rather than any ancestor
+    // that merely contains this text among other content.
+    const bodyLineColor = await previewBox.evaluate((box, valueColorArg) => {
+      const lineDiv = [...box.children].find((el) => el.textContent?.includes('Quiet morning.'))
+      if (!lineDiv) return null
+      return getComputedStyle(lineDiv).color
+    }, valueColor)
+    log(
+      'non-heading body line stays plain body text, not tinted gold like a heading value',
+      bodyLineColor !== null && bodyLineColor !== valueColor,
+    )
 
     await page.close()
   }

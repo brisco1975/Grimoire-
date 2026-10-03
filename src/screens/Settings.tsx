@@ -1,13 +1,30 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp, type ConflictResolutions, type ItemResolution } from '../store/AppContext'
-import { SCHEMA_VERSION, type Chapter, type GrimoireDataset, type IndexEntry, type Project, type Scene } from '../types'
+import {
+  SCHEMA_VERSION,
+  type Chapter,
+  type DeletedItemKind,
+  type GrimoireDataset,
+  type IndexEntry,
+  type Project,
+  type Scene,
+} from '../types'
 import AppHeader from '../components/AppHeader'
+import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import { APP_VERSION, CHANGELOG } from '../data/changelog'
 import { nowIso } from '../utils/id'
 import { toPlainDisplayText } from '../utils/links'
 import { hashString } from '../utils/hash'
+import { RECENTLY_DELETED_RETENTION_DAYS } from '../store/db'
+
+function kindLabelFor(kind: DeletedItemKind): string {
+  if (kind === 'scene') return 'Scene'
+  if (kind === 'chapter') return 'Chapter'
+  if (kind === 'indexEntry') return 'Index entry'
+  return 'Card content'
+}
 
 /**
  * Minimal local shape for the File System Access API's save-file flow —
@@ -71,8 +88,13 @@ const TIPS: { id: string; title: string; body: string }[] = [
   },
   {
     id: 'headings',
-    title: '## headings',
-    body: 'Start a line with ## to turn it into a heading in any card\'s text. Use it to break a card into labeled sections, like "Mentioned" in a Setting card or "Time of day" in a Time card.',
+    title: 'Headings with ##',
+    body: 'Start a line with ## to make it a heading. It shows in green, bold capitals so a section stands out, like "Time of day" or "Mentioned." Put the ## right at the start of the line.',
+  },
+  {
+    id: 'subheadings',
+    title: 'Subheadings with ###',
+    body: 'Start a line with ### to make a subheading under a heading. It shows in gold, automatically capitalized, in a style clearly smaller than the main heading. For example, ##Time of day followed by ###early evening. Use ## alone when you just want a heading that stands out.',
   },
   {
     id: 'line-breaks',
@@ -400,7 +422,7 @@ export default function Settings() {
 
   const lastExported = useMemo(() => formatTimestamp(dataset.meta.lastExportedAt), [dataset.meta.lastExportedAt])
 
-  const RECENT_VERSIONS_SHOWN = 4
+  const RECENT_VERSIONS_SHOWN = 1
   const [showAllVersions, setShowAllVersions] = useState(false)
   const visibleChangelog = showAllVersions ? CHANGELOG : CHANGELOG.slice(0, RECENT_VERSIONS_SHOWN)
   const hiddenVersionCount = CHANGELOG.length - RECENT_VERSIONS_SHOWN
@@ -408,6 +430,9 @@ export default function Settings() {
   const [tipsOpen, setTipsOpen] = useState(false)
   const [expandedTip, setExpandedTip] = useState<string | null>(null)
   const [hintReset, setHintReset] = useState(false)
+
+  const [deletedOpen, setDeletedOpen] = useState(false)
+  const [confirmEmptyDeleted, setConfirmEmptyDeleted] = useState(false)
 
   return (
     <div className="flex-1 flex flex-col">
@@ -459,6 +484,63 @@ export default function Settings() {
                 Export anyway
               </button>
             </p>
+          )}
+        </section>
+
+        {/* Recently Deleted */}
+        <section className="rounded-lg border border-inset bg-surface p-4">
+          <button
+            type="button"
+            onClick={() => setDeletedOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left"
+          >
+            <h2 className="font-heading text-gold text-lg m-0">
+              Recently Deleted{dataset.recentlyDeleted.length > 0 ? ` (${dataset.recentlyDeleted.length})` : ''}
+            </h2>
+            <span className="text-gold-dim text-sm">{deletedOpen ? '▲' : '▼'}</span>
+          </button>
+          {deletedOpen && (
+            <div className="mt-3 flex flex-col gap-3">
+              <p className="text-parchment-muted text-sm m-0">
+                A deleted scene, chapter, Index entry, or cleared card content stays here for{' '}
+                {RECENTLY_DELETED_RETENTION_DAYS} days before being purged automatically — this is in addition to,
+                not instead of, the confirmation you already saw when you deleted it.
+              </p>
+              {dataset.recentlyDeleted.length === 0 ? (
+                <p className="text-parchment-muted text-sm italic m-0">Nothing here.</p>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2">
+                    {dataset.recentlyDeleted.map((item) => (
+                      <div
+                        key={item.id}
+                        className="rounded border border-inset bg-canvas px-3 py-2 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-gold-dim text-xs uppercase tracking-wide">{kindLabelFor(item.kind)}</div>
+                          <div className="text-parchment text-sm truncate">{item.label}</div>
+                          <div className="text-parchment-muted text-xs">{formatTimestamp(item.deletedAt)}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => dispatch({ type: 'RESTORE_DELETED_ITEM', id: item.id })}
+                          className="shrink-0 px-3 py-1.5 rounded border border-inset text-parchment hover:border-gold-dim transition-colors text-sm"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmEmptyDeleted(true)}
+                    className="self-start text-accent-bright hover:underline underline-offset-2 text-sm transition-colors"
+                  >
+                    Empty Now
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </section>
 
@@ -740,6 +822,18 @@ export default function Settings() {
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={confirmEmptyDeleted}
+        title="Empty Recently Deleted?"
+        message="Everything in Recently Deleted will be permanently removed right now, instead of waiting out the 30-day window. This cannot be undone."
+        confirmLabel="Empty Now"
+        onCancel={() => setConfirmEmptyDeleted(false)}
+        onConfirm={() => {
+          dispatch({ type: 'EMPTY_RECENTLY_DELETED' })
+          setConfirmEmptyDeleted(false)
+        }}
+      />
     </div>
   )
 }
