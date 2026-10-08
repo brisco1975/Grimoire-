@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.6.1'
+export const APP_VERSION = '2.6.2'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,14 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.6.2',
+    date: '2026-10-08',
+    changes: [
+      'Fixed: on the Index entry page, the "Person(s)" category pill could touch the Rename button and crowd "Change type" onto two lines. The pill is now a touch smaller, the Rename / Change type / Delete buttons never wrap mid-label, and the whole button row drops below the pill instead if space ever runs out.',
+      'Fixed: backing out of an open Index entry (the in-app arrow or the system gesture) jumped straight past the Index list to wherever the Index was opened from. Back from an entry now returns to the Index list first, and back from the list returns to that opener (the Table of Contents or the Scene Page) — matching how opening a card already works. Links and "Appears In" jumps that go straight to a specific entry are unchanged.',
+    ],
+  },
   {
     version: '2.6.1',
     date: '2026-10-08',

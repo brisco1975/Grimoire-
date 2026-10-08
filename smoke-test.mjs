@@ -259,15 +259,14 @@ async function main() {
     await page.locator('[role="dialog"]').click({ position: { x: 5, y: 820 } })
     await page.waitForTimeout(200)
 
-    // Index always sits directly above the Table of Contents in the back
-    // hierarchy now, regardless of whether it was opened from the Table of
-    // Contents or (as here) from a Scene Page — so browser-back from Index
-    // lands on the Table of Contents, not the scene we opened it from, and
-    // the in-app arrow and the system back gesture agree on that.
+    // The Index list always sits directly above wherever it was opened from
+    // (the Table of Contents or, as here, a Scene Page) — so one more
+    // browser-back from the list (we just backdrop-closed the entry back
+    // down to the list above) lands directly back on that Scene Page, not
+    // the Table of Contents, and the in-app arrow and the system back
+    // gesture agree on that.
+    await page.waitForSelector('text=Person(s)')
     await page.goBack()
-    await page.waitForSelector('text=+ New Entry')
-    await page.click('text=1 — The Opening')
-    await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
     const previewAfterRename = await page.locator('[data-card-key="actions"]').first().innerText()
     log(
@@ -295,10 +294,10 @@ async function main() {
     await page.waitForTimeout(300)
     log('index entry deleted')
 
+    // Deleting closes the entry straight back to the list (consuming its
+    // own push); one more back reaches this Scene Page directly.
+    await page.waitForSelector('text=Person(s)')
     await page.goBack()
-    await page.waitForSelector('text=+ New Entry')
-    await page.click('text=1 — The Opening')
-    await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
     await openCard(page, 'actions')
     await page.waitForSelector('textarea')

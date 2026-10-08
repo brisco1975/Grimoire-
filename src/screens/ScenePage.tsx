@@ -49,7 +49,7 @@ export default function ScenePage() {
           to the Android system back gesture instead of diverging from it. */}
       <AppHeader title={sceneHeading(dataset.scenes, scene)} onBack={() => navigate(-1)} />
       <SceneDetail projectId={projectId!} scene={scene} />
-      <IndexFAB projectId={projectId!} replace />
+      <IndexFAB projectId={projectId!} />
     </div>
   )
 }

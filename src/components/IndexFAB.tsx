@@ -7,18 +7,15 @@ import { useLocation, useNavigate } from 'react-router-dom'
  * whether the phone single-page layout or the tablet/desktop two-page
  * spread is active, with no extra breakpoint handling needed here.
  *
- * Index's place in the back-navigation hierarchy is always directly above
- * the Table of Contents, regardless of which screen the FAB was tapped
- * from. From the Table of Contents itself that's a normal push (Index is
- * one level deeper). From a Scene Page — which is ALSO one push above the
- * Table of Contents — reaching Index the same way would stack a second
- * entry on top of Scene's, so the Scene Page usage passes `replace`: it
- * swaps the Scene Page's entry for Index's, landing Index in the exact
- * same spot in history that the Table of Contents occupies one level
- * down — one pop (arrow tap, "Done", or the system back gesture) out of
- * Index always reaches the Table of Contents, never the Scene Page.
+ * Always a normal push, one level above whichever screen it was tapped
+ * from (Table of Contents or a Scene Page) — so backing out of the Index
+ * list (arrow tap or the system back gesture) always lands back on that
+ * same screen, never collapsing past it. Opening an entry from the list
+ * adds one more push of its own (see IndexScreen's openEntryFromList), so
+ * backing all the way out from an open entry takes exactly two steps:
+ * entry → list → wherever the FAB was tapped from.
  */
-export default function IndexFAB({ projectId, replace = false }: { projectId: string; replace?: boolean }) {
+export default function IndexFAB({ projectId }: { projectId: string }) {
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -28,7 +25,7 @@ export default function IndexFAB({ projectId, replace = false }: { projectId: st
   return (
     <button
       type="button"
-      onClick={() => navigate(`/project/${projectId}/index`, { replace })}
+      onClick={() => navigate(`/project/${projectId}/index`)}
       aria-label="Open Index"
       className="fixed bottom-5 right-5 z-40 h-14 w-14 rounded-full border-2 border-gold bg-accent hover:bg-accent-bright text-gold shadow-lg shadow-black/50 flex items-center justify-center transition-colors"
     >

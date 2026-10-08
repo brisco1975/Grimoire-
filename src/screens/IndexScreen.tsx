@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import AppHeader from '../components/AppHeader'
 import IndexEntryBlurbField from '../components/IndexEntryBlurbField'
@@ -21,6 +21,7 @@ const SECTIONS: { type: IndexEntryType; label: string; empty: string }[] = [
 export default function IndexScreen() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { getProject, dataset, dispatch } = useApp()
 
@@ -47,7 +48,11 @@ export default function IndexScreen() {
 
   // "Open full entry →" from a peek popup elsewhere in the app lands here
   // with ?entry=<id> — auto-opens that entry's detail on arrival, same as
-  // tapping it directly from the list below.
+  // tapping it directly from the list below. This is a one-shot deep link,
+  // not a navigable step of its own: back from an entry opened this way
+  // still goes straight back to wherever the link was tapped from, same as
+  // before — only opening an entry FROM THE BROWSABLE LIST below gets its
+  // own back-returns-to-the-list step (see openedFromListRef below).
   const entryParam = searchParams.get('entry')
   useEffect(() => {
     if (!entryParam) return
@@ -65,6 +70,32 @@ export default function IndexScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryParam])
 
+  // Opening an entry from the browsable list pushes a REAL history entry
+  // (same URL, carrying a marker in location.state) instead of just setting
+  // local state, so that a pop — the in-app arrow or the system back
+  // gesture — lands back on the list, not wherever the Index itself was
+  // opened from. This ref tracks whether the currently-open entry came from
+  // that push (as opposed to a sideways See Also jump or a `?entry=` deep
+  // link, neither of which push anything, and whose existing back behavior
+  // — straight past Index to its own opener — is left unchanged).
+  const openedFromListRef = useRef(false)
+  useEffect(() => {
+    const listEntryId = (location.state as { listEntryId?: string } | null)?.listEntryId
+    if (listEntryId) {
+      const target = entries.find((e) => e.id === listEntryId)
+      setSelected(target ?? null)
+      setRenaming(false)
+      setChangingType(false)
+      setAliasValue('')
+    } else if (openedFromListRef.current) {
+      // Landed back on the pre-push /index location (a pop) — close
+      // whatever was opened from the list.
+      setSelected(null)
+      openedFromListRef.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key])
+
   if (!project || !projectId) {
     return (
       <div className="flex-1 flex flex-col">
@@ -78,11 +109,32 @@ export default function IndexScreen() {
   const liveSelected = selected ? (entries.find((e) => e.id === selected.id) ?? null) : null
   const peekEntry = peekEntryId ? entries.find((e) => e.id === peekEntryId) ?? null : null
 
+  // Sideways jump (a See Also chip inside an already-open entry) and the
+  // `?entry=` deep-link effect above both use this directly — neither
+  // pushes history, matching their existing, unchanged back behavior.
   function openEntry(entry: IndexEntry) {
     setSelected(entry)
     setRenaming(false)
     setChangingType(false)
     setAliasValue('')
+  }
+
+  // Opening FROM THE BROWSABLE LIST pushes a history entry (see the effect
+  // above) so back returns to the list instead of skipping past it.
+  function openEntryFromList(entry: IndexEntry) {
+    openedFromListRef.current = true
+    navigate(`${location.pathname}${location.search}`, { state: { listEntryId: entry.id } })
+  }
+
+  // Closes whatever entry is open, consuming the pending list-open history
+  // push (if any) so it doesn't linger as a wasted extra back step — same
+  // reasoning as FullCardView's leave().
+  function closeEntry() {
+    if (openedFromListRef.current) {
+      navigate(-1)
+    } else {
+      setSelected(null)
+    }
   }
 
   const scenesForSelected = liveSelected ? entryScenes(liveSelected, dataset.scenes) : []
@@ -102,11 +154,15 @@ export default function IndexScreen() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Index always sits directly above the Table of Contents in the back
-          hierarchy, whether it was opened from the Table of Contents or
-          from a Scene Page (see IndexFAB's `replace` prop) — so a pop here
-          always reaches the Table of Contents, matching the in-app arrow
-          to the system back gesture. */}
+      {/* The Index LIST always sits directly above wherever it was opened
+          from (Table of Contents or a Scene Page — see IndexFAB, always a
+          plain push now), so a pop here always reaches that opener,
+          matching the in-app arrow to the system back gesture. An entry
+          opened FROM the list adds one more step of its own (see
+          openEntryFromList above), so this single unconditional
+          navigate(-1) correctly lands on the list first and the opener
+          second — no branching needed here, since that extra step is a
+          real history entry. */}
       <AppHeader title={`${project.title} — Index`} onBack={() => navigate(-1)} />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 max-w-2xl mx-auto w-full flex flex-col gap-6">
@@ -149,7 +205,7 @@ export default function IndexScreen() {
                     <li key={e.id}>
                       <button
                         type="button"
-                        onClick={() => openEntry(e)}
+                        onClick={() => openEntryFromList(e)}
                         className="w-full text-left rounded border border-inset bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors px-4 py-3 flex items-center justify-between gap-3"
                       >
                         <span className="min-w-0">
@@ -172,14 +228,14 @@ export default function IndexScreen() {
       </div>
 
       {/* Entry detail */}
-      <Modal open={!!liveSelected} onClose={() => setSelected(null)} title={liveSelected?.name ?? ''} wide>
+      <Modal open={!!liveSelected} onClose={closeEntry} title={liveSelected?.name ?? ''} wide>
         {liveSelected && (
           <div className="flex flex-col gap-5">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center rounded-full border border-gold-dim px-3 py-1 text-sm font-heading text-gold uppercase tracking-wide">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <span className="shrink-0 inline-flex items-center rounded-full border border-gold-dim px-2.5 py-0.5 text-[13px] font-heading text-gold uppercase tracking-wide">
                 {ENTRY_TYPE_LABELS[liveSelected.type]}
               </span>
-              <div className="flex gap-4 text-sm">
+              <div className="flex gap-4 text-sm whitespace-nowrap">
                 <button
                   type="button"
                   className="text-gold-dim hover:text-gold transition-colors"
@@ -444,7 +500,7 @@ export default function IndexScreen() {
           if (!liveSelected) return
           dispatch({ type: 'DELETE_INDEX_ENTRY', id: liveSelected.id })
           setConfirmDelete(false)
-          setSelected(null)
+          closeEntry()
         }}
       />
 
