@@ -176,7 +176,9 @@ export default function IndexScreen() {
         {liveSelected && (
           <div className="flex flex-col gap-5">
             <div className="flex items-center justify-between">
-              <span className="text-gold-dim text-xs uppercase tracking-wide">{ENTRY_TYPE_LABELS[liveSelected.type]}</span>
+              <span className="inline-flex items-center rounded-full border border-gold-dim px-3 py-1 text-sm font-heading text-gold uppercase tracking-wide">
+                {ENTRY_TYPE_LABELS[liveSelected.type]}
+              </span>
               <div className="flex gap-4 text-sm">
                 <button
                   type="button"

@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.6.0'
+export const APP_VERSION = '2.6.1'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,13 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.6.1',
+    date: '2026-10-08',
+    changes: [
+      'The Index entry category (Person(s) / Place / Thing) now shows as a larger, outlined pill, clearly set apart from the Rename / Change type / Delete buttons beside it instead of blending in as another button — on both the full Index entry page and the quick-peek popup.',
+    ],
+  },
   {
     version: '2.6.0',
     date: '2026-10-08',

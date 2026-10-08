@@ -39,7 +39,9 @@ export default function IndexEntryPeekModal({
       {entry && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-gold-dim text-xs uppercase tracking-wide">{ENTRY_TYPE_LABELS[entry.type]}</span>
+            <span className="inline-flex items-center rounded-full border border-gold-dim px-3 py-1 text-sm font-heading text-gold uppercase tracking-wide">
+              {ENTRY_TYPE_LABELS[entry.type]}
+            </span>
           </div>
 
           <IndexEntryBlurbField
