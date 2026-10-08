@@ -10,7 +10,7 @@ Node/npm environment to build from source.
 site → Deploys → drag and drop), or run `netlify deploy --dir=<extracted-folder> --prod`
 with the Netlify CLI.
 
-Built from commit `8d9cd93` (2026-10-08). This zip is a point-in-time
+Built from commit `68063d9` (2026-10-08). This zip is a point-in-time
 snapshot — it does **not** update itself. Regenerate it after future
 changes with:
 
