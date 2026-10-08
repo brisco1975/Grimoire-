@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import AppHeader from '../components/AppHeader'
+import IndexEntryPeekModal from '../components/IndexEntryPeekModal'
 import LinkedText from '../components/LinkedText'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -120,6 +121,11 @@ export default function TableOfContents() {
   )
 
   const [peekScene, setPeekScene] = useState<Scene | null>(null)
+  // See SceneDetail's matching comment: look the peeked entry up live by ID
+  // on every render, so an edit made inside the popup itself is reflected
+  // back into it immediately rather than leaving it on a stale snapshot.
+  const [peekEntryId, setPeekEntryId] = useState<string | null>(null)
+  const peekEntry = peekEntryId ? projectEntries.find((e) => e.id === peekEntryId) ?? null : null
   const [creating, setCreating] = useState(false)
   const [creatingPlanned, setCreatingPlanned] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -418,7 +424,7 @@ export default function TableOfContents() {
       >
         <div className="text-parchment whitespace-pre-wrap min-h-[3em] m-0 mb-5">
           {peekScene?.summary?.trim() ? (
-            <LinkedText text={peekScene.summary} entries={projectEntries} />
+            <LinkedText text={peekScene.summary} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
           ) : (
             <span className="text-parchment-muted italic">No summary yet.</span>
           )}
@@ -440,6 +446,16 @@ export default function TableOfContents() {
           </button>
         </div>
       </Modal>
+
+      <IndexEntryPeekModal
+        entry={peekEntry}
+        entries={projectEntries}
+        projectId={projectId!}
+        onClose={() => setPeekEntryId(null)}
+        onOpenEntry={(entry) => setPeekEntryId(entry.id)}
+        onSaveBlurb={(id, blurb) => dispatch({ type: 'UPDATE_INDEX_ENTRY', id, patch: { blurb } })}
+        onOpenFullEntry={(entry) => navigate(`/project/${projectId}/index?entry=${entry.id}`)}
+      />
 
       {creating && (
         <EntryModal onClose={() => setCreating(false)} projectId={projectId} planning={creatingPlanned} />

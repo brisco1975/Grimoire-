@@ -1,4 +1,4 @@
-import type { GrimoireDataset, IndexEntry, Scene } from '../types'
+import type { DeletedItem, GrimoireDataset, IndexEntry, Scene } from '../types'
 import { TEXT_CARDS } from '../data/cards'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -84,10 +84,21 @@ export function findExactMatch(entries: IndexEntry[], projectId: string, name: s
   )
 }
 
-/** Converts stored raw text -> friendly editable text. Each token becomes `[[cachedDisplay]]` — the exact text frozen at insertion, whether or not the target entry still exists (see the module comment above). */
-export function rawToFriendly(raw: string): string {
+/**
+ * Converts stored raw text -> friendly editable text. Each token becomes
+ * `[[Name]]` using the target entry's CURRENT name when it still exists
+ * (so the editor's own "brackets with the name inside" view never shows a
+ * stale pre-rename label either) — falling back to the frozen
+ * `cachedDisplay` only for a degraded link whose entry is gone, same as
+ * every other at-rest renderer (see LinkedText).
+ */
+export function rawToFriendly(raw: string, entries: IndexEntry[]): string {
   return parseSegments(raw)
-    .map((seg) => (seg.type === 'text' ? seg.value : `[[${seg.cachedDisplay}]]`))
+    .map((seg) => {
+      if (seg.type === 'text') return seg.value
+      const entry = entries.find((e) => e.id === seg.id)
+      return `[[${entry ? entry.name : seg.cachedDisplay}]]`
+    })
     .join('')
 }
 
@@ -131,6 +142,125 @@ export function entryScenes(entry: IndexEntry, scenes: Scene[]): Scene[] {
     // like a built-in card's does.
     return Object.values(s.customCardContent ?? {}).some((value) => containsLinkTo(value, entry.id))
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Stored-label refresh — keeps storage (and therefore exports) in sync with
+// display. Display itself (LinkedText, rawToFriendly) never depends on this
+// having run: both look up an entry's CURRENT name live, by id, every time.
+// This is purely about the text actually sitting in a Scene's fields not
+// drifting stale forever, which matters for: exports (so a shared file
+// shows current names to someone else's app, not just this session's live
+// view), and a degraded link's fallback text once its entry is deleted
+// (that fallback IS the stored label, so it needs to already be current at
+// the moment of deletion).
+//
+// Called from two places: UPDATE_INDEX_ENTRY, right after a rename, so
+// storage stays in sync going forward (see AppContext); and once via
+// REPLACE_DATASET on every dataset load/import, as a retroactive one-time
+// cleanup for labels stored stale by versions of the app before this
+// existed. Both share this exact logic rather than each reimplementing a
+// "walk every token" pass, and both get it for free by construction.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Rewrites every RESOLVABLE link token's stored label to its entry's current name. A token whose id no longer resolves is left completely untouched — same degrade-gracefully rule as everywhere else. Idempotent: already-current labels round-trip unchanged. */
+export function refreshLabels(raw: string, entries: IndexEntry[]): string {
+  RAW_TOKEN_RE.lastIndex = 0
+  return raw.replace(RAW_TOKEN_RE, (whole, id: string) => {
+    const entry = entries.find((e) => e.id === id)
+    if (!entry) return whole
+    return makeLinkToken(id, entry.name)
+  })
+}
+
+/** Applies refreshLabels() to every text-bearing field on a Scene — the built-in cards, every custom card, and both a Connection's note and an Unwritten Scene's description. Returns the SAME object (no new reference) when nothing needed changing, so callers can cheaply tell whether anything actually changed. */
+export function refreshSceneLabels(scene: Scene, entries: IndexEntry[]): Scene {
+  let changed = false
+  const next: Scene = { ...scene }
+
+  for (const card of TEXT_CARDS) {
+    const refreshed = refreshLabels(scene[card.key], entries)
+    if (refreshed !== scene[card.key]) {
+      next[card.key] = refreshed
+      changed = true
+    }
+  }
+
+  let customCardContent = scene.customCardContent
+  for (const [key, value] of Object.entries(scene.customCardContent ?? {})) {
+    const refreshed = refreshLabels(value, entries)
+    if (refreshed !== value) {
+      if (customCardContent === scene.customCardContent) customCardContent = { ...scene.customCardContent }
+      customCardContent[key] = refreshed
+      changed = true
+    }
+  }
+  if (customCardContent !== scene.customCardContent) next.customCardContent = customCardContent
+
+  let connectionsChanged = false
+  const connections = scene.connections.map((c) => {
+    const refreshedNote = c.note ? refreshLabels(c.note, entries) : c.note
+    const noteChanged = refreshedNote !== c.note
+    // Narrow on c.sceneId (not a reassigned/widened local) so the
+    // discriminated SceneConnection union — sceneId: null always pairs
+    // with unwrittenDescription: string — type-checks on the way back out.
+    if (c.sceneId === null) {
+      const refreshedDesc = c.unwrittenDescription ? refreshLabels(c.unwrittenDescription, entries) : c.unwrittenDescription
+      const descChanged = refreshedDesc !== c.unwrittenDescription
+      if (!noteChanged && !descChanged) return c
+      connectionsChanged = true
+      return { ...c, note: refreshedNote, unwrittenDescription: refreshedDesc }
+    }
+    if (!noteChanged) return c
+    connectionsChanged = true
+    return { ...c, note: refreshedNote }
+  })
+  if (connectionsChanged) {
+    next.connections = connections
+    changed = true
+  }
+
+  return changed ? next : scene
+}
+
+/** Applies refreshSceneLabels() to a Recently Deleted snapshot, where simple — a trashed scene's own text fields, or a trashed card-content payload's value. An id/name collision's live counterpart is refreshed separately, already, by whichever of the two call sites below is running. */
+function refreshDeletedItemLabels(item: DeletedItem, entries: IndexEntry[]): DeletedItem {
+  if (item.kind === 'scene' && item.scene) {
+    const refreshedScene = refreshSceneLabels(item.scene, entries)
+    if (refreshedScene !== item.scene) return { ...item, scene: refreshedScene }
+  }
+  if (item.kind === 'cardContent' && item.cardContent) {
+    const refreshedValue = refreshLabels(item.cardContent.value, entries)
+    if (refreshedValue !== item.cardContent.value) {
+      return { ...item, cardContent: { ...item.cardContent, value: refreshedValue } }
+    }
+  }
+  if (item.kind === 'indexEntry' && item.indexEntry?.blurb) {
+    const refreshedBlurb = refreshLabels(item.indexEntry.blurb, entries)
+    if (refreshedBlurb !== item.indexEntry.blurb) {
+      return { ...item, indexEntry: { ...item.indexEntry, blurb: refreshedBlurb } }
+    }
+  }
+  return item
+}
+
+/** Refreshes every stored link label across the whole dataset against its CURRENT indexEntries — scenes, custom card content, Connection notes/descriptions, every entry's own blurb, and Recently Deleted snapshots. Returns the SAME dataset object when nothing changed. Safe to call unconditionally (on load, on import, after every rename); cheap when there's nothing to do. */
+export function refreshAllLabels(dataset: GrimoireDataset): GrimoireDataset {
+  const scenes = dataset.scenes.map((s) => refreshSceneLabels(s, dataset.indexEntries))
+  const scenesChanged = scenes.some((s, i) => s !== dataset.scenes[i])
+
+  const indexEntries = dataset.indexEntries.map((e) => {
+    if (!e.blurb) return e
+    const refreshedBlurb = refreshLabels(e.blurb, dataset.indexEntries)
+    return refreshedBlurb === e.blurb ? e : { ...e, blurb: refreshedBlurb }
+  })
+  const indexEntriesChanged = indexEntries.some((e, i) => e !== dataset.indexEntries[i])
+
+  const recentlyDeleted = dataset.recentlyDeleted.map((item) => refreshDeletedItemLabels(item, dataset.indexEntries))
+  const recentlyDeletedChanged = recentlyDeleted.some((d, i) => d !== dataset.recentlyDeleted[i])
+
+  if (!scenesChanged && !indexEntriesChanged && !recentlyDeletedChanged) return dataset
+  return { ...dataset, scenes, indexEntries, recentlyDeleted }
 }
 
 /**
@@ -225,26 +355,40 @@ export function capitalizeFirstLetter(segments: LinkSegment[]): LinkSegment[] {
 }
 
 export interface HeadingParts {
-  /** Segments up to and including the first literal "-" found in plain text. */
+  /** Segments up to and including the separator that triggered the split. */
   label: LinkSegment[]
-  /** Everything after that dash, or null when the line had no dash to split on — the whole line is then just the label. */
+  /** Everything after that separator, or null when the line had no valid split — the whole line is then just the label. */
   value: LinkSegment[] | null
 }
 
 /**
+ * A "##Label- value" split's separator. A hyphen is the common case, but a
+ * few other characters read the same way when a writer reaches for them
+ * instead — an en/em dash, "=", ":", "/", "|".
+ */
+const SEPARATOR_CHARS = new Set(['-', '–', '—', '=', ':', '/', '|'])
+
+/**
  * Splits a heading line's already bracket-parsed segments (see
  * parseSegments) into a label portion and a value portion, at the first
- * literal "-" found in a PLAIN-TEXT segment — never inside a link segment.
- * Operating on segments instead of the raw string is what makes this safe:
- * a resolved link's raw token embeds a UUID id (e.g.
+ * separator that's immediately followed by a space AND THEN more content —
+ * never inside a link segment, and never a separator with no space after it
+ * (that's just ordinary text, most commonly a hyphenated word: "quasi-
+ * sentient" must never split just because it contains a hyphen). "More
+ * content" can be plain text later in the same segment, or — since a
+ * separator can legitimately sit right before a link, e.g. "##Mentioned-
+ * [[Kala]]" — simply having further segments at all.
+ *
+ * Operating on segments instead of the raw string is what keeps this safe
+ * around link tokens: a resolved link's raw token embeds a UUID id (e.g.
  * "[[@982d3870-d1a7-...|Millennium Celebration]]"), which almost always
- * contains its own "-" characters. Splitting the raw string naively would
- * find that dash first and bisect the token itself, leaving both halves as
- * unparseable garbage instead of a resolved link — this is what "##[[Some
- * Link]] = ..." rendering as raw [[@id|...]] syntax was: the id's own
- * dashes losing the race against the intended "##Label- value" dash.
- * Since link segments here are pre-parsed and atomic, a dash embedded in
- * one's id can never be seen as a split point.
+ * contains its own "-" characters with no space after them — those are
+ * never even candidates, both because they're inside a 'link' segment
+ * (skipped entirely) and because they're never followed by a space. Since
+ * link segments here are pre-parsed and atomic, nothing inside one can ever
+ * be seen as a split point.
+ *
+ * If several valid splits exist, only the first wins.
  */
 export function splitHeadingSegments(segments: LinkSegment[]): HeadingParts {
   const label: LinkSegment[] = []
@@ -254,14 +398,24 @@ export function splitHeadingSegments(segments: LinkSegment[]): HeadingParts {
       label.push(seg)
       continue
     }
-    const dashIdx = seg.value.indexOf('-')
-    if (dashIdx === -1) {
+    const text = seg.value
+    let splitIdx = -1
+    for (let idx = 0; idx < text.length; idx++) {
+      if (!SEPARATOR_CHARS.has(text[idx])) continue
+      if (text[idx + 1] !== ' ') continue
+      const moreInThisSegment = text.slice(idx + 2).trim().length > 0
+      const moreSegmentsAfter = i < segments.length - 1
+      if (!moreInThisSegment && !moreSegmentsAfter) continue
+      splitIdx = idx
+      break
+    }
+    if (splitIdx === -1) {
       label.push(seg)
       continue
     }
-    label.push({ type: 'text', value: seg.value.slice(0, dashIdx + 1) })
+    label.push({ type: 'text', value: text.slice(0, splitIdx + 1) })
     const value: LinkSegment[] = []
-    const rest = seg.value.slice(dashIdx + 1)
+    const rest = text.slice(splitIdx + 1)
     if (rest) value.push({ type: 'text', value: rest })
     value.push(...segments.slice(i + 1))
     return { label, value }

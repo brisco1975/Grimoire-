@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.5.1'
+export const APP_VERSION = '2.6.0'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,19 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.6.0',
+    date: '2026-10-08',
+    changes: [
+      'Fixed: renaming an Index entry only updated new links going forward — every card, Connection note, and the editor itself kept showing the OLD name in existing links (though "Appears In" and navigation were always correct). A link now always shows the entry\'s current name, looked up live wherever it renders, and a one-time migration refreshes every already-stored link label on load so existing links read correctly immediately with no re-typing. Export/import carry the refreshed labels, and importing an older export still displays current names via the same live lookup.',
+      'Fixed: a "##" heading line split into green/gold at a hyphen with no space around it, breaking hyphenated words like "quasi-sentient" into two colors. A dash or other separator now only splits the line when it\'s followed by a space and more text — a hyphen inside a word never splits.',
+      'The scene title line under a card\'s name header (e.g. "4 — Vexed") is now sized close to the header itself, instead of noticeably smaller.',
+      'Added "Change type" to an Index entry\'s own page, next to Rename and Delete — lets you move a Person(s)/Place/Thing entry to a different category without changing its id, so every existing link keeps resolving.',
+      'Relabeled the "Person" category to "Person(s)" everywhere it\'s shown (Index headers, the type picker, the peek popup) — label only, no effect on existing data or links.',
+      'Added a short, optional description to Index entries, editable in place on the entry\'s own page or right inside its new quick-peek popup (see below) — no separate edit screen, with an inviting empty state and truncate/expand for longer text.',
+      'Tapping a resolved [[link]] — in any card, a Connection note, or inside another peek\'s own description — now opens a quick peek popup for that entry (current name, type, the description, Also Known As, and a jump to the full entry) instead of opening the card\'s full editor. Each card now has its own explicit "Edit" button in its header to open the full editor; tapping the card body elsewhere no longer does. Built-in and custom cards behave identically.',
+    ],
+  },
   {
     version: '2.5.1',
     date: '2026-10-03',

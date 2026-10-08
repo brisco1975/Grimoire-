@@ -8,6 +8,18 @@ function log(msg, ok = true) {
   if (!ok) process.exitCode = 1
 }
 
+// Cards are no longer opened by tapping anywhere in the card body (that tap
+// target now belongs to resolved [[links]], which open a peek popup instead
+// — see item 6 of the batched-fixes spec). Each card carries a stable
+// data-card-key attribute and its own explicit "Edit" button in the header;
+// this helper clicks that button, scoped to the right card.
+async function openCard(page, cardKey) {
+  await page.locator(`[data-card-key="${cardKey}"]`).getByRole('button', { name: 'Edit', exact: true }).click()
+}
+async function openCardByTap(page, cardKey) {
+  await page.locator(`[data-card-key="${cardKey}"]`).getByRole('button', { name: 'Edit', exact: true }).tap()
+}
+
 async function main() {
   const browser = await chromium.launch({ executablePath: CHROME_PATH })
   // One shared context/storage across both passes — a fresh browser.newPage()
@@ -46,7 +58,7 @@ async function main() {
     await page.click('text=1 — The Opening')
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    await page.click('text=Actions')
+    await openCard(page, 'actions')
     await page.waitForSelector('textarea')
     log('reached FullCardView editor')
 
@@ -64,7 +76,7 @@ async function main() {
     await newElaraBtn.waitFor()
     await newElaraBtn.click({ timeout: 5000 })
     await page.waitForSelector('text=What is this?')
-    await page.getByRole('button', { name: 'Person', exact: true }).click()
+    await page.getByRole('button', { name: 'Person(s)', exact: true }).click()
     await page.waitForTimeout(600) // let debounce flush
     log('new entry created via [[ dropdown + classification modal')
 
@@ -109,7 +121,7 @@ async function main() {
     await newElaraVossBtn.waitFor()
     await newElaraVossBtn.click({ timeout: 5000 })
     await page.waitForSelector('text=What is this?')
-    await page.getByRole('button', { name: 'Person', exact: true }).click()
+    await page.getByRole('button', { name: 'Person(s)', exact: true }).click()
     await page.waitForTimeout(600)
     log('second distinct entry "Elara Voss" created (no false collision)')
 
@@ -150,7 +162,7 @@ async function main() {
     // Go back to Scene page, verify LinkedText renders resolved links (green, no brackets) in the peek
     await page.click('button[aria-label="Back"]')
     await page.waitForSelector('text=Edit Entry')
-    const actionsPreview = page.locator('[role="button"]:has-text("Actions")').first()
+    const actionsPreview = page.locator('[data-card-key="actions"]').first()
     const previewText = await actionsPreview.innerText()
     const noRawBrackets = !previewText.includes('[[') && !previewText.includes('@')
     log('at-rest preview hides raw bracket/id syntax', noRawBrackets)
@@ -166,7 +178,7 @@ async function main() {
     // at-rest view uses. Link the Summary field to the existing "Elara"
     // entry, then back all the way out to the Table of Contents list and
     // re-open the peek popup (not the full scene) to check its rendering.
-    await page.click('text=Summary')
+    await openCard(page, 'summary')
     await page.waitForSelector('textarea')
     const summaryTextarea = page.locator('textarea')
     await summaryTextarea.click()
@@ -213,7 +225,7 @@ async function main() {
 
     // Check Index screen population
     await page.click('button[aria-label="Open Index"]')
-    await page.waitForSelector('text=People')
+    await page.waitForSelector('text=Person(s)')
     await page.waitForTimeout(200)
     // Entry-row buttons also contain a trailing "›" affordance glyph, so the
     // accessible NAME isn't a bare "Elara" — match on the name span's exact
@@ -227,8 +239,10 @@ async function main() {
     log('Index entry detail lists the scene it appears in', showsScene)
 
     // Close this modal, rename "Elara Voss" via the Index, then confirm the scene
-    // text still reads "Elara Voss" verbatim (alias/typed text preserved on rename,
-    // not swapped for the new canonical name) and the link stays resolved (green).
+    // text now reads the NEW name "Voss Sterling" (display always looks up an
+    // entry's current name live, by id — see LinkedText — so a rename updates
+    // every place it's linked instantly, with no re-typing or re-save needed)
+    // and the link stays resolved (green).
     // Modal has no Escape/close-button handler — click the backdrop (outside
     // the centered card) to dismiss it, same as a real user would.
     await page.locator('[role="dialog"]').click({ position: { x: 5, y: 820 } })
@@ -255,18 +269,18 @@ async function main() {
     await page.click('text=1 — The Opening')
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    const previewAfterRename = await page.locator('[role="button"]:has-text("Actions")').first().innerText()
+    const previewAfterRename = await page.locator('[data-card-key="actions"]').first().innerText()
     log(
-      'renaming an entry preserves already-typed alias text in prose ("Elara Voss" stays, not "Voss Sterling")',
-      previewAfterRename.includes('Elara Voss') && !previewAfterRename.includes('Voss Sterling'),
+      'renaming an entry updates its link in prose instantly, with no edit ("Voss Sterling" shows, not "Elara Voss")',
+      previewAfterRename.includes('Voss Sterling') && !previewAfterRename.includes('Elara Voss'),
     )
     const stillLinkStyled = await page
-      .locator('[role="button"]:has-text("Actions") .text-link:has-text("Elara Voss")')
+      .locator('[data-card-key="actions"] .text-link:has-text("Voss Sterling")')
       .isVisible()
-    log("renamed entry's old-name mention is still styled as a resolved link, not degraded", stillLinkStyled)
+    log("renamed entry's mention is styled as a resolved link, not degraded", stillLinkStyled)
 
     await page.click('button[aria-label="Open Index"]')
-    await page.waitForSelector('text=People')
+    await page.waitForSelector('text=Person(s)')
     await page.waitForTimeout(200)
     await page.getByText('Elara', { exact: true }).click()
     await page.waitForSelector('text=Appears In')
@@ -286,7 +300,7 @@ async function main() {
     await page.click('text=1 — The Opening')
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    await page.click('text=Actions')
+    await openCard(page, 'actions')
     await page.waitForSelector('textarea')
     const raw = await page.locator('textarea').inputValue()
     log('deleted entry link degrades to plain [[Elara]] bracket text in editor', raw.includes('[[Elara]]'))
@@ -349,7 +363,7 @@ async function main() {
     await page.getByText('1 — Touch Scene', { exact: true }).tap()
     await page.getByRole('button', { name: 'Continue', exact: true }).tap()
     await page.waitForSelector('text=Edit Entry')
-    await page.getByText('Actions', { exact: true }).tap()
+    await openCardByTap(page, 'actions')
     await page.waitForSelector('textarea')
     if (await page.isVisible('text=Got it')) await page.getByRole('button', { name: 'Got it', exact: true }).tap()
 
@@ -362,7 +376,7 @@ async function main() {
     await touchNewEntryBtn.tap()
     const classifyShown = await page.isVisible('text=What is this?')
     log('TOUCH: tapping "+ New Entry" on a real touch tap opens the classification modal (not silently ignored)', classifyShown)
-    await page.getByRole('button', { name: 'Person', exact: true }).tap()
+    await page.getByRole('button', { name: 'Person(s)', exact: true }).tap()
     await page.waitForTimeout(600)
     const afterCreate = await touchTextarea.inputValue()
     log('TOUCH: link actually gets inserted into the field text (not left as raw "[[Rennick")', afterCreate.includes('[[Rennick]]'))
@@ -422,7 +436,7 @@ async function main() {
       await page.getByText(sceneHeadingText, { exact: true }).click()
       await page.click('text=Continue')
       await page.waitForSelector('text=Edit Entry')
-      await page.click('text=Summary')
+      await openCard(page, 'summary')
       await page.waitForSelector('textarea')
       const ta = page.locator('textarea')
       await ta.click()
@@ -508,7 +522,7 @@ async function main() {
     await page.getByText('1 — Scene One', { exact: true }).click()
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    const scene1Summary = await page.locator('[role="button"]:has-text("Summary")').first().innerText()
+    const scene1Summary = await page.locator('[data-card-key="summary"]').first().innerText()
     log('individually-overridden item ("Keep Local") kept the local text', scene1Summary.includes('Local A edited'))
 
     await page.locator('button[aria-label="Back"]').click()
@@ -516,7 +530,7 @@ async function main() {
     await page.getByText('2 — Scene Two', { exact: true }).click()
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    const scene2Summary = await page.locator('[role="button"]:has-text("Summary")').first().innerText()
+    const scene2Summary = await page.locator('[data-card-key="summary"]').first().innerText()
     log('bulk "Keep Imported" item took the imported text', scene2Summary.includes('Original B'))
 
     await page.close()
@@ -561,7 +575,7 @@ async function main() {
     )
 
     // ── Dropdown-vs-keyboard shrink ──
-    await page.click('text=Actions')
+    await openCard(page, 'actions')
     await page.waitForSelector('textarea')
     const fieldTextarea = page.locator('textarea')
     const heightBefore = (await fieldTextarea.boundingBox())?.height ?? 0
@@ -606,7 +620,7 @@ async function main() {
     await page.getByText('1 — Search Scene', { exact: true }).click()
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    await page.click('text=Actions')
+    await openCard(page, 'actions')
     await page.waitForSelector('textarea')
     if (await page.isVisible('text=Got it')) await page.click('button:has-text("Got it")')
 
@@ -616,7 +630,7 @@ async function main() {
     await page.waitForTimeout(300)
     await page.getByRole('button', { name: '+ New Entry: "Thornwood"', exact: true }).click()
     await page.waitForSelector('text=What is this?')
-    await page.getByRole('button', { name: 'Person', exact: true }).click()
+    await page.getByRole('button', { name: 'Person(s)', exact: true }).click()
     await page.waitForTimeout(500)
 
     await searchTa.click()
@@ -633,7 +647,7 @@ async function main() {
 
     // Add "Thorny" as an alias for Thornwood via the Index.
     await page.click('button[aria-label="Open Index"]')
-    await page.waitForSelector('text=People')
+    await page.waitForSelector('text=Person(s)')
     await page.getByText('Thornwood', { exact: true }).click()
     await page.waitForSelector('text=Appears In')
     await page.fill('input[placeholder="Add another name…"]', 'Thorny')
@@ -656,7 +670,7 @@ async function main() {
 
     await page.fill('input[aria-label="Search the Index"]', '')
     await page.waitForTimeout(150)
-    const bothCategoriesBack = (await page.isVisible('text=People')) && (await page.isVisible('text=Places'))
+    const bothCategoriesBack = (await page.isVisible('text=Person(s)')) && (await page.isVisible('text=Places'))
     log('clearing search returns to the full browsable view', bothCategoriesBack)
 
     await page.close()
@@ -689,7 +703,7 @@ async function main() {
     await page.getByText('2 — Heading Scene', { exact: true }).click()
     await page.click('text=Continue')
     await page.waitForSelector('text=Edit Entry')
-    await page.click('text=Time')
+    await openCard(page, 'time')
     await page.waitForSelector('textarea')
 
     const headingTa = page.locator('textarea')

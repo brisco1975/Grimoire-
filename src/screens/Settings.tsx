@@ -8,7 +8,6 @@ import {
   type DeletedItemKind,
   type GrimoireDataset,
   type IndexEntry,
-  type IndexEntryType,
   type Project,
   type Scene,
 } from '../types'
@@ -17,6 +16,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
 import RestoreCollisionDialog, { type CollisionSidePreview } from '../components/RestoreCollisionDialog'
 import { APP_VERSION, CHANGELOG } from '../data/changelog'
+import { ENTRY_TYPE_LABELS } from '../data/indexEntryTypes'
 import { nowIso } from '../utils/id'
 import { toPlainDisplayText } from '../utils/links'
 import { hashString } from '../utils/hash'
@@ -30,8 +30,6 @@ function kindLabelFor(kind: DeletedItemKind): string {
   if (kind === 'indexEntry') return 'Index entry'
   return 'Card content'
 }
-
-const ENTRY_TYPE_LABEL: Record<IndexEntryType, string> = { person: 'Person', place: 'Place', thing: 'Thing' }
 
 /** What the deleted side of the restore-collision dialog should show for a given Recently Deleted record. */
 function describeDeletedSide(item: DeletedItem): CollisionSidePreview {
@@ -48,7 +46,7 @@ function describeDeletedSide(item: DeletedItem): CollisionSidePreview {
   if (item.kind === 'indexEntry' && item.indexEntry) {
     return {
       title: item.label,
-      subtitle: ENTRY_TYPE_LABEL[item.indexEntry.type],
+      subtitle: ENTRY_TYPE_LABELS[item.indexEntry.type],
       preview: item.indexEntry.aliases.length ? `Also known as: ${item.indexEntry.aliases.join(', ')}` : '',
     }
   }
@@ -81,7 +79,7 @@ function describeLiveSide(dataset: GrimoireDataset, collision: RestoreCollision)
     const e = collision.live
     return {
       title: e.name,
-      subtitle: ENTRY_TYPE_LABEL[e.type],
+      subtitle: ENTRY_TYPE_LABELS[e.type],
       preview: e.aliases.length ? `Also known as: ${e.aliases.join(', ')}` : '',
       idLabel: e.id,
     }
@@ -158,7 +156,7 @@ const TIPS: { id: string; title: string; body: string }[] = [
   {
     id: 'headings',
     title: 'Headings with ##',
-    body: 'Start a line with ## to make it a heading. It shows in green, bold capitals so a section stands out, like "Time of day" or "Mentioned." Put the ## right at the start of the line.',
+    body: 'Start a line with ## to make it a heading. It shows in green, bold capitals so a section stands out, like "Time of day" or "Mentioned." Put the ## right at the start of the line. A dash or similar separator followed by a space turns the rest of that line gold, like "##Day- three"; a hyphen inside a word, like "quasi-sentient," does not.',
   },
   {
     id: 'subheadings',
@@ -204,6 +202,11 @@ const TIPS: { id: string; title: string; body: string }[] = [
     id: 'backups',
     title: 'Backups',
     body: 'Export regularly. A web app can\'t warn you before its data is cleared, so "Last exported" in Settings is your safety net.',
+  },
+  {
+    id: 'link-peek',
+    title: 'Peeking at a linked name',
+    body: 'Tapping a linked name opens a quick peek you can edit right there — name, type, and a short description. Each card has its own "Edit" button to open its full editor.',
   },
 ]
 

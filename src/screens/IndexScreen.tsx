@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import AppHeader from '../components/AppHeader'
+import IndexEntryBlurbField from '../components/IndexEntryBlurbField'
+import IndexEntryPeekModal from '../components/IndexEntryPeekModal'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import SeeAlsoPicker from '../components/SeeAlsoPicker'
 import type { IndexEntry, IndexEntryType } from '../types'
+import { ENTRY_TYPES, ENTRY_TYPE_LABELS } from '../data/indexEntryTypes'
 import { entryScenes } from '../utils/links'
 import { sceneHeading } from '../utils/tocOrdering'
 
 const SECTIONS: { type: IndexEntryType; label: string; empty: string }[] = [
-  { type: 'person', label: 'People', empty: 'No people indexed yet — mention someone with [[ in any text field.' },
+  { type: 'person', label: ENTRY_TYPE_LABELS.person, empty: 'No people indexed yet — mention someone with [[ in any text field.' },
   { type: 'place', label: 'Places', empty: 'No places indexed yet — mention one with [[ in any text field.' },
   { type: 'thing', label: 'Things', empty: 'No things indexed yet — mention one with [[ in any text field.' },
 ]
@@ -18,6 +21,7 @@ const SECTIONS: { type: IndexEntryType; label: string; empty: string }[] = [
 export default function IndexScreen() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { getProject, dataset, dispatch } = useApp()
 
   const project = projectId ? getProject(projectId) : undefined
@@ -30,9 +34,36 @@ export default function IndexScreen() {
   const [selected, setSelected] = useState<IndexEntry | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
+  const [changingType, setChangingType] = useState(false)
   const [aliasValue, setAliasValue] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [pickingSeeAlso, setPickingSeeAlso] = useState(false)
+  // A link tapped inside THIS entry's own blurb opens a nested quick peek,
+  // separate from `selected` (the full entry page underneath stays open).
+  // Tracked by ID and looked up live (like `liveSelected` above) so an edit
+  // made inside the popup itself — its own blurb field — shows immediately
+  // instead of the popup holding a stale snapshot from when it was opened.
+  const [peekEntryId, setPeekEntryId] = useState<string | null>(null)
+
+  // "Open full entry →" from a peek popup elsewhere in the app lands here
+  // with ?entry=<id> — auto-opens that entry's detail on arrival, same as
+  // tapping it directly from the list below.
+  const entryParam = searchParams.get('entry')
+  useEffect(() => {
+    if (!entryParam) return
+    const target = entries.find((e) => e.id === entryParam)
+    if (target) {
+      setSelected(target)
+      setRenaming(false)
+      setChangingType(false)
+      setAliasValue('')
+    }
+    setSearchParams((params) => {
+      params.delete('entry')
+      return params
+    }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryParam])
 
   if (!project || !projectId) {
     return (
@@ -45,10 +76,12 @@ export default function IndexScreen() {
 
   // Keep the open detail panel in sync with live dataset changes (renames, new aliases, etc.).
   const liveSelected = selected ? (entries.find((e) => e.id === selected.id) ?? null) : null
+  const peekEntry = peekEntryId ? entries.find((e) => e.id === peekEntryId) ?? null : null
 
   function openEntry(entry: IndexEntry) {
     setSelected(entry)
     setRenaming(false)
+    setChangingType(false)
     setAliasValue('')
   }
 
@@ -143,9 +176,7 @@ export default function IndexScreen() {
         {liveSelected && (
           <div className="flex flex-col gap-5">
             <div className="flex items-center justify-between">
-              <span className="text-gold-dim text-xs uppercase tracking-wide">
-                {liveSelected.type === 'person' ? 'Person' : liveSelected.type === 'place' ? 'Place' : 'Thing'}
-              </span>
+              <span className="text-gold-dim text-xs uppercase tracking-wide">{ENTRY_TYPE_LABELS[liveSelected.type]}</span>
               <div className="flex gap-4 text-sm">
                 <button
                   type="button"
@@ -159,6 +190,13 @@ export default function IndexScreen() {
                 </button>
                 <button
                   type="button"
+                  className="text-gold-dim hover:text-gold transition-colors"
+                  onClick={() => setChangingType((v) => !v)}
+                >
+                  Change type
+                </button>
+                <button
+                  type="button"
                   className="text-accent-bright hover:text-accent transition-colors"
                   onClick={() => setConfirmDelete(true)}
                 >
@@ -166,6 +204,35 @@ export default function IndexScreen() {
                 </button>
               </div>
             </div>
+
+            {changingType && (
+              <div className="grid grid-cols-3 gap-2 -mt-2">
+                {ENTRY_TYPES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    disabled={t === liveSelected.type}
+                    onClick={() => {
+                      // Same id, same name/aliases/seeAlso/blurb — only the
+                      // type changes, so every existing [[link]] (which
+                      // resolves by id, never by type) still resolves, and
+                      // the entry simply reappears in the Index's section
+                      // for its new category. Entry names are unique
+                      // PROJECT-WIDE already (see utils/links.findExactMatch,
+                      // which never filters by type), so changing type alone
+                      // can never collide with another entry's name — there
+                      // is nothing here for a "Same thing / Different thing"
+                      // collision prompt to resolve.
+                      dispatch({ type: 'UPDATE_INDEX_ENTRY', id: liveSelected.id, patch: { type: t } })
+                      setChangingType(false)
+                    }}
+                    className="rounded border border-inset bg-surface hover:border-gold-dim hover:bg-surface-2 transition-colors px-3 py-2 text-center text-parchment text-sm disabled:opacity-40 disabled:cursor-default disabled:hover:border-inset disabled:hover:bg-surface"
+                  >
+                    {ENTRY_TYPE_LABELS[t]}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {renaming && (
               <form
@@ -203,6 +270,18 @@ export default function IndexScreen() {
             <p className="text-parchment-muted text-xs -mt-2">
               Renaming updates every place this entry is linked instantly — nothing needs re-typing.
             </p>
+
+            {/* Blurb */}
+            <div>
+              <h3 className="font-heading text-gold text-sm uppercase tracking-wide m-0 mb-2">Description</h3>
+              <IndexEntryBlurbField
+                entry={liveSelected}
+                entries={entries}
+                projectId={projectId}
+                onSave={(blurb) => dispatch({ type: 'UPDATE_INDEX_ENTRY', id: liveSelected.id, patch: { blurb } })}
+                onOpenEntry={(entry) => setPeekEntryId(entry.id)}
+              />
+            </div>
 
             {/* Aliases */}
             <div>
@@ -364,6 +443,19 @@ export default function IndexScreen() {
           dispatch({ type: 'DELETE_INDEX_ENTRY', id: liveSelected.id })
           setConfirmDelete(false)
           setSelected(null)
+        }}
+      />
+
+      <IndexEntryPeekModal
+        entry={peekEntry}
+        entries={entries}
+        projectId={projectId}
+        onClose={() => setPeekEntryId(null)}
+        onOpenEntry={(entry) => setPeekEntryId(entry.id)}
+        onSaveBlurb={(id, blurb) => dispatch({ type: 'UPDATE_INDEX_ENTRY', id, patch: { blurb } })}
+        onOpenFullEntry={(entry) => {
+          setPeekEntryId(null)
+          openEntry(entry)
         }}
       />
     </div>

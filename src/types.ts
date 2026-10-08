@@ -9,7 +9,7 @@
 // IndexEntry — populated only once the bracket-linking engine exists).
 // ─────────────────────────────────────────────────────────────────────────
 
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 export type IndexEntryType = 'person' | 'place' | 'thing'
 
@@ -163,6 +163,13 @@ export interface IndexEntry {
   aliases: string[]
   /** IDs of related-but-distinct entries (e.g. singular/plural forms). */
   seeAlso: string[]
+  /**
+   * Optional short description (2-4 lines intended) — separate from
+   * aliases/See Also. Editable in place wherever it's shown: the full
+   * Index entry page and the peek popup. May itself contain [[links]],
+   * resolved through the same shared renderer as everywhere else.
+   */
+  blurb: string
   /**
    * @deprecated Kept only so old exports round-trip without data loss.
    * Which scenes reference an entry is now always LIVE-COMPUTED by

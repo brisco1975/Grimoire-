@@ -4,6 +4,7 @@ import { useApp } from '../store/AppContext'
 import ConfirmDialog from './ConfirmDialog'
 import ConnectionPicker from './ConnectionPicker'
 import EntryModal from './EntryModal'
+import IndexEntryPeekModal from './IndexEntryPeekModal'
 import LinkedText from './LinkedText'
 import LinkedTextEditor from './LinkedTextEditor'
 import Modal from './Modal'
@@ -18,6 +19,7 @@ function TextCardButton({
   value,
   entries,
   onOpen,
+  onOpenEntry,
   fullWidth = false,
 }: {
   cardKey: string
@@ -25,59 +27,52 @@ function TextCardButton({
   value: string
   entries: IndexEntry[]
   onOpen: () => void
+  /** Opens the quick peek popup for a tapped resolved [[link]] — the card body itself is no longer a tap target (see the header's explicit "Edit" control instead). */
+  onOpenEntry: (entry: IndexEntry) => void
   fullWidth?: boolean
 }) {
   // Local, per-card expand toggle — lets the FULL card content show right
   // here in the main view (still colored, still brackets-hidden via
-  // LinkedText) instead of always being clipped to 2 lines. The card is no
-  // longer a single <button> because of that toggle: a real <button>
-  // (Show more/less) can't legally nest inside another <button>, so the
-  // whole-card tap target is now a div with button semantics instead, and
-  // the toggle stops its click from bubbling up to "open editor."
+  // LinkedText) instead of always being clipped to 2 lines.
   const [expanded, setExpanded] = useState(false)
   const hasContent = value.trim().length > 0
 
   return (
     <div
       key={cardKey}
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpen()
-        }
-      }}
-      className={`text-left rounded-lg border border-inset bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors p-4 flex flex-col gap-1 cursor-pointer ${fullWidth ? 'sm:col-span-2' : ''}`}
+      data-card-key={cardKey}
+      className={`text-left rounded-lg border border-inset bg-surface p-4 flex flex-col gap-1 ${fullWidth ? 'sm:col-span-2' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="font-heading text-gold text-base tracking-wide uppercase">{label}</span>
-        {hasContent && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setExpanded((v) => !v)
-            }}
-            className="shrink-0 text-gold-dim hover:text-gold text-sm transition-colors"
-          >
-            {expanded ? 'Show less ▲' : 'Show more ▾'}
+        <div className="flex items-center gap-3 shrink-0">
+          {hasContent && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="text-gold-dim hover:text-gold text-sm transition-colors"
+            >
+              {expanded ? 'Show less ▲' : 'Show more ▾'}
+            </button>
+          )}
+          <button type="button" onClick={onOpen} className="text-gold-dim hover:text-gold text-sm transition-colors">
+            Edit
           </button>
-        )}
+        </div>
       </div>
       {hasContent ? (
         // line-clamp instead of manual character truncation when collapsed —
         // bracket-link tokens have very different raw vs. rendered lengths,
         // so slicing the raw string by character count risks cutting a token
-        // in half. No onOpenEntry here: links render as plain highlighted
-        // text rather than nested buttons, since the whole card is already a
-        // single tap target.
+        // in half. onOpenEntry makes each resolved link its own tap target
+        // (opening that entry's peek popup); the card body around it is
+        // plain, non-interactive text now that "Edit" is the explicit way
+        // into the full editor.
         <div className={`text-parchment-muted text-lg ${expanded ? '' : 'line-clamp-2'}`}>
-          <LinkedText text={value} entries={entries} />
+          <LinkedText text={value} entries={entries} onOpenEntry={onOpenEntry} />
         </div>
       ) : (
-        <span className="text-parchment-muted text-lg italic">Empty — tap to add</span>
+        <span className="text-parchment-muted text-lg italic">Empty — tap Edit to add</span>
       )}
     </div>
   )
@@ -104,11 +99,18 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
   const [markingWritten, setMarkingWritten] = useState(false)
   const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
+  // Tracks the peeked entry by ID, not the entry object itself — looking it
+  // up live by ID on every render (like IndexScreen's `liveSelected`) means
+  // an edit made INSIDE the popup (e.g. its own blurb field) is reflected
+  // back into the popup immediately, instead of the popup going on showing
+  // a stale snapshot from the moment it was opened.
+  const [peekEntryId, setPeekEntryId] = useState<string | null>(null)
 
   const projectEntries = useMemo(
     () => dataset.indexEntries.filter((e) => e.projectId === projectId),
     [dataset.indexEntries, projectId],
   )
+  const peekEntry = peekEntryId ? projectEntries.find((e) => e.id === peekEntryId) ?? null : null
 
   const connectionRows = useMemo(() => {
     return scene.connections.map((c) => ({
@@ -176,6 +178,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
             value={scene[key]}
             entries={projectEntries}
             onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${key}`)}
+            onOpenEntry={(entry) => setPeekEntryId(entry.id)}
           />
         ))}
 
@@ -187,6 +190,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
             value={scene.customCardContent[card.id] ?? ''}
             entries={projectEntries}
             onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${card.id}`)}
+            onOpenEntry={(entry) => setPeekEntryId(entry.id)}
           />
         ))}
 
@@ -247,11 +251,11 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                         </div>
                       </div>
                       <div className="text-gold text-sm">
-                        <LinkedText text={connection.unwrittenDescription ?? ''} entries={projectEntries} />
+                        <LinkedText text={connection.unwrittenDescription ?? ''} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
                       </div>
                       {connection.note && (
                         <div className="text-parchment-muted text-sm">
-                          <LinkedText text={connection.note} entries={projectEntries} />
+                          <LinkedText text={connection.note} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
                         </div>
                       )}
                     </div>
@@ -304,7 +308,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                     </div>
                     {connection.note && (
                       <div className="text-parchment-muted text-sm">
-                        <LinkedText text={connection.note} entries={projectEntries} />
+                        <LinkedText text={connection.note} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
                       </div>
                     )}
                   </div>
@@ -341,6 +345,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
             entries={projectEntries}
             fullWidth
             onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${easterEggsCard.key}`)}
+            onOpenEntry={(entry) => setPeekEntryId(entry.id)}
           />
         )}
 
@@ -353,6 +358,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
             entries={projectEntries}
             fullWidth
             onOpen={() => navigate(`/project/${projectId}/scene/${scene.id}/card/${card.id}`)}
+            onOpenEntry={(entry) => setPeekEntryId(entry.id)}
           />
         ))}
       </div>
@@ -442,6 +448,16 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
           onClose={() => setMarkingWritten(false)}
         />
       )}
+
+      <IndexEntryPeekModal
+        entry={peekEntry}
+        entries={projectEntries}
+        projectId={projectId}
+        onClose={() => setPeekEntryId(null)}
+        onOpenEntry={(entry) => setPeekEntryId(entry.id)}
+        onSaveBlurb={(id, blurb) => dispatch({ type: 'UPDATE_INDEX_ENTRY', id, patch: { blurb } })}
+        onOpenFullEntry={(entry) => navigate(`/project/${projectId}/index?entry=${entry.id}`)}
+      />
     </div>
   )
 }

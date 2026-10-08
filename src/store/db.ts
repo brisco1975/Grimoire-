@@ -267,6 +267,7 @@ export function migrateDataset(raw: unknown): GrimoireDataset {
       name: (e.name as string) ?? '',
       aliases: Array.isArray(e.aliases) ? (e.aliases as string[]) : [],
       seeAlso: Array.isArray(e.seeAlso) ? (e.seeAlso as string[]) : [],
+      blurb: typeof e.blurb === 'string' ? e.blurb : '',
       sceneIds: Array.isArray(e.sceneIds) ? (e.sceneIds as string[]) : [],
       createdAt: (e.createdAt as string) ?? new Date().toISOString(),
       updatedAt: (e.updatedAt as string) ?? new Date().toISOString(),

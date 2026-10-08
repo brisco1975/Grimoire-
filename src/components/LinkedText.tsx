@@ -34,13 +34,13 @@ function InlineSegments({
               }}
               className="text-link hover:underline underline-offset-2 font-medium"
             >
-              {seg.cachedDisplay}
+              {entry.name}
             </button>
           )
         }
         return (
           <span key={i} className="text-link font-medium">
-            {seg.cachedDisplay}
+            {entry.name}
           </span>
         )
       })}
@@ -51,16 +51,21 @@ function InlineSegments({
 /**
  * Read-only "at rest" rendering of text containing bracket-links, "##"
  * headings, and "###" subheadings. Resolved links (entry still exists)
- * show the exact text that was typed or selected at insertion time — a
- * canonical name or an alias, whichever was used — in malachite green with
- * the [[brackets]] hidden. Renaming an Index entry does NOT retroactively
- * rewrite prose already using an alias or an old name (piped-link style,
- * matching how Obsidian preserves display text); the id still resolves
- * correctly regardless (see AppContext's UPDATE_INDEX_ENTRY, which
- * auto-aliases an entry's previous name on rename so nothing that was ever
- * typed goes unresolved). Degraded links (entry was deleted) fall back to
- * the same plain, unhighlighted bracketed text, visually identical to a
- * mention that was never linked.
+ * ALWAYS show that entry's CURRENT name, looked up live by id — never the
+ * label frozen inside the stored token at insertion time. Renaming an
+ * entry in the Index therefore updates every place it's linked instantly,
+ * with no re-typing and no re-save needed, since this lookup happens at
+ * render time (see AppContext's UPDATE_INDEX_ENTRY, which also proactively
+ * rewrites every stored label dataset-wide via utils/links.refreshAllLabels
+ * so storage — and exports — stay in sync; that lookup/entry.name here is
+ * what actually fixes display, and is correct even for data that hasn't
+ * been rewritten yet). The stored label (`seg.cachedDisplay`) is used ONLY
+ * as the degraded fallback below, when the entry no longer exists at all —
+ * that's the one case where there's no current name to look up, so the
+ * last known name is what a deleted link's text reads as. Renaming also
+ * still auto-registers the old name as an alias, so hand-typing `[[OldName]]`
+ * later keeps resolving to the same entry; it just never changes what
+ * already-linked text displays.
  *
  * This is the SOLE renderer for card text everywhere it's shown at rest —
  * the collapsed/expanded scene card, Full Card View's preview, the Table

@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useApp } from '../store/AppContext'
 import type { IndexEntry, IndexEntryType } from '../types'
+import { ENTRY_TYPES, ENTRY_TYPE_LABELS } from '../data/indexEntryTypes'
 import { makeId, nowIso } from '../utils/id'
 import {
   detectTrigger,
@@ -16,8 +17,6 @@ export interface LinkedTextEditorHandle {
   /** Flush any pending debounced save immediately — call before navigating away. */
   flush: () => void
 }
-
-const TYPE_LABELS: Record<IndexEntryType, string> = { person: 'Person', place: 'Place', thing: 'Thing' }
 
 /**
  * The active-editing surface for any bracket-linkable text field. Typing
@@ -70,7 +69,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
   const { dataset, dispatch } = useApp()
   const compact = variant === 'compact'
 
-  const [friendly, setFriendly] = useState(() => rawToFriendly(value))
+  const [friendly, setFriendly] = useState(() => rawToFriendly(value, dataset.indexEntries))
   const [trigger, setTrigger] = useState<{ start: number; query: string } | null>(null)
   const [classifying, setClassifying] = useState<{ name: string } | null>(null)
   const [collision, setCollision] = useState<{ name: string; existing: IndexEntry } | null>(null)
@@ -111,7 +110,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
   useEffect(() => {
     if (value === lastSavedRaw.current) return
     lastSavedRaw.current = value
-    setFriendly(rawToFriendly(value))
+    setFriendly(rawToFriendly(value, dataset.indexEntries))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
@@ -222,6 +221,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
       name,
       aliases: [],
       seeAlso: [],
+      blurb: '',
       sceneIds: [],
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -338,7 +338,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
                 className="w-full text-left px-3 py-2 hover:bg-surface transition-colors flex items-center justify-between gap-2"
               >
                 <span className="text-parchment">{entry.name}</span>
-                <span className="text-gold-dim text-xs uppercase tracking-wide">{TYPE_LABELS[entry.type]}</span>
+                <span className="text-gold-dim text-xs uppercase tracking-wide">{ENTRY_TYPE_LABELS[entry.type]}</span>
               </button>
             ))}
           </div>
@@ -353,7 +353,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
               Classify <strong>"{classifying.name}"</strong> to add it to this project's Index.
             </p>
             <div className="grid grid-cols-3 gap-2">
-              {(['person', 'place', 'thing'] as IndexEntryType[]).map((t) => (
+              {ENTRY_TYPES.map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -363,7 +363,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
                   }}
                   className="rounded border border-inset bg-surface hover:border-gold-dim hover:bg-surface-2 transition-colors px-3 py-3 text-center text-parchment"
                 >
-                  {TYPE_LABELS[t]}
+                  {ENTRY_TYPE_LABELS[t]}
                 </button>
               ))}
             </div>
@@ -388,7 +388,7 @@ const LinkedTextEditor = forwardRef<LinkedTextEditorHandle, {
             </p>
             <div className="rounded border border-inset bg-surface px-3 py-2 mb-4">
               <div className="text-parchment font-heading">{collision.existing.name}</div>
-              <div className="text-gold-dim text-xs uppercase tracking-wide">{TYPE_LABELS[collision.existing.type]}</div>
+              <div className="text-gold-dim text-xs uppercase tracking-wide">{ENTRY_TYPE_LABELS[collision.existing.type]}</div>
             </div>
             <div className="flex flex-col gap-2">
               <button

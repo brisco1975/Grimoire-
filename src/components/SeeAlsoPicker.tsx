@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { IndexEntry } from '../types'
+import { ENTRY_TYPE_LABELS } from '../data/indexEntryTypes'
 import Modal from './Modal'
-
-const TYPE_LABELS: Record<IndexEntry['type'], string> = { person: 'Person', place: 'Place', thing: 'Thing' }
 
 /**
  * Manual "See Also" linking between two related-but-distinct Index entries
@@ -52,7 +51,7 @@ export default function SeeAlsoPicker({
             className="text-left rounded border border-inset bg-surface hover:bg-surface-2 hover:border-gold-dim transition-colors px-3 py-2 flex items-center justify-between gap-2"
           >
             <span className="font-heading text-parchment">{e.name}</span>
-            <span className="text-gold-dim text-xs uppercase tracking-wide">{TYPE_LABELS[e.type]}</span>
+            <span className="text-gold-dim text-xs uppercase tracking-wide">{ENTRY_TYPE_LABELS[e.type]}</span>
           </button>
         ))}
       </div>

@@ -30,6 +30,7 @@ import { makeId, nowIso } from '../utils/id'
 import { computeInsertIndex, groupMembers, sceneGroupOf, swapScenePositions, sceneHeading, type InsertPosition } from '../utils/tocOrdering'
 import { projectChapters } from '../utils/chapters'
 import { findRestoreCollision } from '../utils/recentlyDeleted'
+import { refreshAllLabels } from '../utils/links'
 
 type Action =
   | { type: 'ADD_PROJECT'; title: string }
@@ -377,25 +378,30 @@ function baseReducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       return { ...state, indexEntries: [...state.indexEntries, action.entry] }
     }
     case 'UPDATE_INDEX_ENTRY': {
-      return {
-        ...state,
-        indexEntries: state.indexEntries.map((e) => {
-          if (e.id !== action.id) return e
-          const patch = action.patch
-          let aliases = patch.aliases ?? e.aliases
-          // Bracket-linked text keeps showing whatever was typed at insertion
-          // (see utils/links.ts) rather than a live canonical name, so a
-          // rename here would otherwise strand every place that already used
-          // the old name — it'd stop matching on the next edit-and-save
-          // round trip. Auto-registering the old name as an alias keeps it
-          // resolvable forever without rewriting a word of existing prose.
-          if (patch.name && patch.name.trim() && patch.name.trim() !== e.name) {
-            const alreadyAliased = aliases.some((a) => a.toLowerCase() === e.name.toLowerCase())
-            if (!alreadyAliased) aliases = [...aliases, e.name]
-          }
-          return { ...e, ...patch, aliases, updatedAt: nowIso() }
-        }),
-      }
+      let renamed = false
+      const indexEntries = state.indexEntries.map((e) => {
+        if (e.id !== action.id) return e
+        const patch = action.patch
+        let aliases = patch.aliases ?? e.aliases
+        // Bracket-linked text is displayed by looking up the entry's
+        // CURRENT name live (see LinkedText) — a rename alone is already
+        // enough to update every place it's linked, with no rewrite
+        // needed for correctness. The old name is still auto-registered
+        // as an alias too, purely so hand-typing "[[OldName]]" later keeps
+        // resolving to this same entry.
+        if (patch.name && patch.name.trim() && patch.name.trim() !== e.name) {
+          const alreadyAliased = aliases.some((a) => a.toLowerCase() === e.name.toLowerCase())
+          if (!alreadyAliased) aliases = [...aliases, e.name]
+          renamed = true
+        }
+        return { ...e, ...patch, aliases, updatedAt: nowIso() }
+      })
+      if (!renamed) return { ...state, indexEntries }
+      // Proactively rewrite every stored label dataset-wide in this same
+      // action, so storage (and therefore exports) never trails display —
+      // see utils/links.refreshAllLabels. Display itself never depends on
+      // this having run; it's purely for storage hygiene.
+      return refreshAllLabels({ ...state, indexEntries })
     }
     case 'DELETE_INDEX_ENTRY': {
       // Bracket-link tokens in scene text pointing at this id are intentionally
@@ -451,7 +457,12 @@ function baseReducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       return { ...state, meta: { ...state.meta, hasSeenLinkHint: action.seen } }
     }
     case 'REPLACE_DATASET': {
-      return action.dataset
+      // Retroactive cleanup for labels stored stale by a version of the app
+      // before current-name lookup existed (see utils/links.refreshAllLabels)
+      // — covers both initial hydration from IndexedDB and every import.
+      // Idempotent and a no-op once storage is already in sync, so running
+      // it unconditionally here is safe on every load.
+      return refreshAllLabels(action.dataset)
     }
     case 'SET_LAST_EXPORTED': {
       return { ...state, meta: { ...state.meta, lastExportedAt: action.timestamp, lastExportedHash: action.hash } }

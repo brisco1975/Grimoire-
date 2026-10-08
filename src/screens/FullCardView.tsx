@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../store/AppContext'
 import AppHeader from '../components/AppHeader'
 import ConfirmDialog from '../components/ConfirmDialog'
+import IndexEntryPeekModal from '../components/IndexEntryPeekModal'
 import LinkedText from '../components/LinkedText'
 import LinkedTextEditor, { type LinkedTextEditorHandle } from '../components/LinkedTextEditor'
 import { TEXT_CARDS, type TextCardKey } from '../data/cards'
@@ -43,11 +44,16 @@ export default function FullCardView() {
   // without changing the default "tap card, land in edit mode" flow.
   const [previewing, setPreviewing] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  // See SceneDetail's matching comment: look the peeked entry up live by ID
+  // on every render, so an edit made inside the popup itself is reflected
+  // back into it immediately rather than leaving it on a stale snapshot.
+  const [peekEntryId, setPeekEntryId] = useState<string | null>(null)
 
   const projectEntries = useMemo(
     () => (projectId ? dataset.indexEntries.filter((e) => e.projectId === projectId) : []),
     [dataset.indexEntries, projectId],
   )
+  const peekEntry = peekEntryId ? projectEntries.find((e) => e.id === peekEntryId) ?? null : null
 
   if (!scene || !cardMeta || !projectId) {
     return (
@@ -96,7 +102,7 @@ export default function FullCardView() {
   return (
     <div className="flex-1 flex flex-col page-turn">
       <AppHeader title={cardMeta.label} onBack={leave} />
-      <div className="px-4 pt-2 text-parchment-muted text-sm">{sceneHeading(dataset.scenes, scene)}</div>
+      <div className="px-4 pt-2 text-parchment-muted text-xl">{sceneHeading(dataset.scenes, scene)}</div>
 
       {showHint && !previewing && (
         <div className="mx-4 mt-3 rounded-lg border border-gold-dim bg-surface-2 px-4 py-3 flex items-start gap-3">
@@ -136,7 +142,7 @@ export default function FullCardView() {
             className="flex-1 min-h-[40vh] w-full rounded-lg border border-inset bg-surface text-parchment text-xl px-4 py-3 leading-relaxed whitespace-pre-wrap cursor-text"
           >
             {value.trim() ? (
-              <LinkedText text={value} entries={projectEntries} />
+              <LinkedText text={value} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
             ) : (
               <span className="text-parchment-muted italic">Empty — tap to add</span>
             )}
@@ -186,6 +192,16 @@ export default function FullCardView() {
         confirmLabel="Clear"
         onCancel={() => setConfirmClear(false)}
         onConfirm={clearContent}
+      />
+
+      <IndexEntryPeekModal
+        entry={peekEntry}
+        entries={projectEntries}
+        projectId={projectId}
+        onClose={() => setPeekEntryId(null)}
+        onOpenEntry={(entry) => setPeekEntryId(entry.id)}
+        onSaveBlurb={(id, blurb) => dispatch({ type: 'UPDATE_INDEX_ENTRY', id, patch: { blurb } })}
+        onOpenFullEntry={(entry) => navigate(`/project/${projectId}/index?entry=${entry.id}`)}
       />
     </div>
   )
