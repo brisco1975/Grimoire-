@@ -99,10 +99,18 @@ function InlineSegments({
  * label — the common case, and the only one the Tips section documents.
  *
  * A "###" subheading is visibly smaller and lighter-weight than a "##"
- * heading — still clearly heading-style text, not body prose — rendered in
- * gold, in sentence case: its first letter is capitalized regardless of
- * how it was typed (see utils/links.capitalizeFirstLetter), unlike a "##"
- * heading's text, which always renders exactly as typed.
+ * heading — still clearly heading-style text, not body prose. It uses the
+ * SAME label/value split as "##" (see utils/links.splitHeadingSegments,
+ * shared by both levels): the label (through the separator) keeps the
+ * subheading's small-caps-looking heading typography, now in lime instead
+ * of gold, with its first letter capitalized regardless of how it was
+ * typed (see utils/links.capitalizeFirstLetter, applied to the label only).
+ * The value (everything after the separator), when there is one, switches
+ * to the body font and renders in gold EXACTLY as typed — no
+ * capitalization, no uppercasing, no small-caps — unlike "##"'s value,
+ * which inherits the heading's own full-capitals styling. A "###" line
+ * with no valid split has nothing to switch to, so the whole line is just
+ * the lime label, same as a dash-less "##" heading is just its green label.
  *
  * Plain lines (no marker) are always ordinary body text, unaffected by any
  * heading or subheading elsewhere in the same field. (A resolved bracket
@@ -137,10 +145,18 @@ export default function LinkedText({
           )
         }
         if (line.level === 3) {
-          const segments = capitalizeFirstLetter(parseSegments(line.text))
+          const { label, value } = splitHeadingSegments(parseSegments(line.text))
+          const labelSegments = capitalizeFirstLetter(label)
           return (
-            <div key={i} className="font-heading text-sm font-normal tracking-wide text-gold mt-1.5 first:mt-0">
-              <InlineSegments segments={segments} entries={entries} onOpenEntry={onOpenEntry} />
+            <div key={i} className="text-sm tracking-wide mt-1.5 first:mt-0">
+              <span className="font-heading font-normal text-lime">
+                <InlineSegments segments={labelSegments} entries={entries} onOpenEntry={onOpenEntry} />
+              </span>
+              {value !== null && (
+                <span className="font-body normal-case text-gold">
+                  <InlineSegments segments={value} entries={entries} onOpenEntry={onOpenEntry} />
+                </span>
+              )}
             </div>
           )
         }

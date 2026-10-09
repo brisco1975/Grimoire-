@@ -161,7 +161,7 @@ const TIPS: { id: string; title: string; body: string }[] = [
   {
     id: 'subheadings',
     title: 'Subheadings with ###',
-    body: 'Start a line with ### to make a subheading under a heading. It shows in gold, automatically capitalized, in a style clearly smaller than the main heading. For example, ##Time of day followed by ###early evening. Use ## alone when you just want a heading that stands out.',
+    body: 'Start a line with ### to make a subheading under a heading, in a style clearly smaller than the main heading. The words right after ### show in small lime capitals, automatically capitalized. Add a dash or similar separator followed by a space to continue the line in gold, exactly as you typed it — for example, ###Description- tall and lean. Use ### alone when you just want a subheading label. Use ## for the main heading.',
   },
   {
     id: 'line-breaks',

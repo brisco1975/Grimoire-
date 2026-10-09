@@ -46,6 +46,23 @@ export default function IndexScreen() {
   // instead of the popup holding a stale snapshot from when it was opened.
   const [peekEntryId, setPeekEntryId] = useState<string | null>(null)
 
+  // Every inline picker/editor on the entry page is LOCAL to "whichever
+  // entry is currently open," never to a specific entry's id — IndexScreen
+  // itself never unmounts between entries (switching `selected` just swaps
+  // which entry's data the same Modal shows), so without this, an open
+  // picker left open by leaving the entry (instead of choosing an item or
+  // explicitly closing it) stayed open and reappeared bound to the NEXT
+  // entry opened, showing the picker instead of that entry's own page.
+  // Called on every exit path — see closeEntry() and every entry-open
+  // effect/function below — covers See Also (the reported bug) and the
+  // same class of state for Change type, Rename, and the alias input.
+  function resetEntryEditors() {
+    setRenaming(false)
+    setChangingType(false)
+    setAliasValue('')
+    setPickingSeeAlso(false)
+  }
+
   // "Open full entry →" from a peek popup elsewhere in the app lands here
   // with ?entry=<id> — auto-opens that entry's detail on arrival, same as
   // tapping it directly from the list below. This is a one-shot deep link,
@@ -59,9 +76,7 @@ export default function IndexScreen() {
     const target = entries.find((e) => e.id === entryParam)
     if (target) {
       setSelected(target)
-      setRenaming(false)
-      setChangingType(false)
-      setAliasValue('')
+      resetEntryEditors()
     }
     setSearchParams((params) => {
       params.delete('entry')
@@ -84,13 +99,13 @@ export default function IndexScreen() {
     if (listEntryId) {
       const target = entries.find((e) => e.id === listEntryId)
       setSelected(target ?? null)
-      setRenaming(false)
-      setChangingType(false)
-      setAliasValue('')
+      resetEntryEditors()
     } else if (openedFromListRef.current) {
-      // Landed back on the pre-push /index location (a pop) — close
-      // whatever was opened from the list.
+      // Landed back on the pre-push /index location (a pop, via the in-app
+      // arrow or the system back gesture) — close whatever was opened from
+      // the list, and reset any picker/editor it had open.
       setSelected(null)
+      resetEntryEditors()
       openedFromListRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,9 +129,7 @@ export default function IndexScreen() {
   // pushes history, matching their existing, unchanged back behavior.
   function openEntry(entry: IndexEntry) {
     setSelected(entry)
-    setRenaming(false)
-    setChangingType(false)
-    setAliasValue('')
+    resetEntryEditors()
   }
 
   // Opening FROM THE BROWSABLE LIST pushes a history entry (see the effect
@@ -134,6 +147,7 @@ export default function IndexScreen() {
       navigate(-1)
     } else {
       setSelected(null)
+      resetEntryEditors()
     }
   }
 
@@ -332,7 +346,14 @@ export default function IndexScreen() {
             {/* Blurb */}
             <div>
               <h3 className="font-heading text-gold text-sm uppercase tracking-wide m-0 mb-2">Description</h3>
+              {/* Keyed by entry id — IndexScreen never unmounts between
+                  entries (switching `selected` just swaps which entry's
+                  data the same Modal shows), so without this, this
+                  component's own internal editing/expanded state would
+                  carry over to the next entry opened, same bug class as
+                  the See Also picker's leftover open state above. */}
               <IndexEntryBlurbField
+                key={liveSelected.id}
                 entry={liveSelected}
                 entries={entries}
                 projectId={projectId}

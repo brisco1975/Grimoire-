@@ -68,7 +68,7 @@ function TextCardButton({
         // (opening that entry's peek popup); the card body around it is
         // plain, non-interactive text now that "Edit" is the explicit way
         // into the full editor.
-        <div className={`text-parchment-muted text-lg ${expanded ? '' : 'line-clamp-2'}`}>
+        <div className={`text-parchment text-lg ${expanded ? '' : 'line-clamp-2'}`}>
           <LinkedText text={value} entries={entries} onOpenEntry={onOpenEntry} />
         </div>
       ) : (
@@ -254,7 +254,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                         <LinkedText text={connection.unwrittenDescription ?? ''} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
                       </div>
                       {connection.note && (
-                        <div className="text-parchment-muted text-sm">
+                        <div className="text-parchment text-sm">
                           <LinkedText text={connection.note} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
                         </div>
                       )}
@@ -307,7 +307,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
                       </div>
                     </div>
                     {connection.note && (
-                      <div className="text-parchment-muted text-sm">
+                      <div className="text-parchment text-sm">
                         <LinkedText text={connection.note} entries={projectEntries} onOpenEntry={(entry) => setPeekEntryId(entry.id)} />
                       </div>
                     )}

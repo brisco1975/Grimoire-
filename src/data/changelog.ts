@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.6.2'
+export const APP_VERSION = '2.6.3'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,15 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.6.3',
+    date: '2026-10-09',
+    changes: [
+      'A "###" subheading now splits like a "##" heading does: the words right after ### show in small lime capitals (previously gold), and a dash or similar separator followed by a space continues the line in gold exactly as typed — no capitalization or small-caps — instead of the whole line rendering as one block of gold capitals.',
+      'Fixed: regular body text in rendered cards on the Scene Page looked dimmer and grayer than the same text in the card editor and the Full Card View preview. It now uses the same bright primary text color everywhere a card renders — collapsed and expanded cards, the preview, the editor, peek popups, Connection notes, and Index descriptions. Placeholders, hints, and other secondary text are unchanged.',
+      'Fixed: opening the See Also picker on an Index entry and leaving without choosing anything left it stuck open — the next entry opened showed the picker instead of its own page, until the app was reloaded. The picker (and the same leftover-state issue in Change type, Rename, and the Description field, on both the full entry page and the peek popup) now always starts closed and resets on every way of leaving, including switching directly to a different entry.',
+    ],
+  },
   {
     version: '2.6.2',
     date: '2026-10-08',

@@ -44,7 +44,13 @@ export default function IndexEntryPeekModal({
             </span>
           </div>
 
+          {/* Keyed by entry id so switching to a different peeked entry — a
+              link tapped inside this popup's own blurb swaps `entry` in
+              place, no remount otherwise — always starts with a fresh,
+              closed instance instead of carrying over this component's
+              internal editing/expanded state from the entry just left. */}
           <IndexEntryBlurbField
+            key={entry.id}
             entry={entry}
             entries={entries}
             projectId={projectId}
