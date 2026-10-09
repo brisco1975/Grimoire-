@@ -22,6 +22,20 @@
 
 :root {
   color-scheme: dark;
+  /* The floating Index button's own size/position (see IndexFAB) — kept
+     here as the single source both it and .fab-scroll-clearance read, so
+     the button and the padding that clears it can never drift apart. */
+  --fab-size: 3.5rem; /* h-14 / w-14 */
+  --fab-offset: 1.25rem; /* bottom-5 / right-5 */
+}
+
+/* Applied to any scrollable container that can sit beneath the floating
+   Index button (see IndexFAB) — enough bottom padding for its full height
+   plus its offset from the viewport edge plus a comfortable margin, so the
+   last item always scrolls completely clear of it, on top of whatever
+   safe-area inset the device needs for its own nav bar/home indicator. */
+.fab-scroll-clearance {
+  padding-bottom: calc(var(--fab-size) + var(--fab-offset) + 24px + env(safe-area-inset-bottom));
 }
 
 * {

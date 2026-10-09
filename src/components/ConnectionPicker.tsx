@@ -61,7 +61,6 @@ export default function ConnectionPicker({
           project?.title.toLowerCase().includes(q)
         )
       })
-      .slice(0, 50)
   }, [dataset.scenes, dataset.projects, currentScene, editingConnection, query])
 
   function reset() {

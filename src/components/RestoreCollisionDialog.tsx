@@ -28,7 +28,7 @@ export default function RestoreCollisionDialog({
   live: CollisionSidePreview
   /** Restore the deleted item, moving the current live item into Recently Deleted in its place. */
   onSwap: () => void
-  /** Keep the live item as-is; permanently discard the deleted item (not re-added to Recently Deleted). */
+  /** Keep the live item as-is; delete the trashed item forever (not re-added to Recently Deleted). */
   onDiscard: () => void
   onCancel: () => void
 }) {
@@ -67,7 +67,7 @@ export default function RestoreCollisionDialog({
           onClick={onDiscard}
           className="px-4 py-2.5 rounded border border-accent-bright text-accent-bright hover:bg-accent-bright/10 transition-colors text-left"
         >
-          Keep the current item — permanently discard the deleted one
+          Keep the current item — delete the one in Recently Deleted forever
         </button>
         <button
           type="button"

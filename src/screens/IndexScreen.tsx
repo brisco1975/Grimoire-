@@ -11,6 +11,7 @@ import type { IndexEntry, IndexEntryType } from '../types'
 import { ENTRY_TYPES, ENTRY_TYPE_LABELS } from '../data/indexEntryTypes'
 import { entryScenes } from '../utils/links'
 import { sceneHeading } from '../utils/tocOrdering'
+import { RECENTLY_DELETED_RETENTION_DAYS } from '../store/db'
 
 const SECTIONS: { type: IndexEntryType; label: string; empty: string }[] = [
   { type: 'person', label: ENTRY_TYPE_LABELS.person, empty: 'No people indexed yet — mention someone with [[ in any text field.' },
@@ -177,7 +178,7 @@ export default function IndexScreen() {
           navigate(-1) correctly lands on the list first and the opener
           second — no branching needed here, since that extra step is a
           real history entry. */}
-      <AppHeader title={`${project.title} — Index`} onBack={() => navigate(-1)} />
+      <AppHeader title={project.title} subtitle="Index" onBack={() => navigate(-1)} />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 max-w-2xl mx-auto w-full flex flex-col gap-6">
         {entries.length > 0 && (
@@ -514,7 +515,7 @@ export default function IndexScreen() {
       <ConfirmDialog
         open={confirmDelete}
         title="Delete this Index entry?"
-        message={`"${liveSelected?.name}" will be removed from the Index. Any [[bracket links]] to it in scene text will revert to plain, unresolved text rather than breaking outright. This cannot be undone.`}
+        message={`"${liveSelected?.name}" will move to Recently Deleted, where it can be restored for ${RECENTLY_DELETED_RETENTION_DAYS} days. Any [[bracket links]] to it in scene text show as plain, unresolved text in the meantime — restoring the entry reconnects them.`}
         confirmLabel="Delete"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {

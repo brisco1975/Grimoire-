@@ -12,6 +12,7 @@ import SceneDetail from '../components/SceneDetail'
 import { GROUP_LABELS, groupMembers, sceneHeading, type TocGroup } from '../utils/tocOrdering'
 import { chapterHeading, groupScenesByChapter } from '../utils/chapters'
 import { useIsWide } from '../utils/breakpoint'
+import { RECENTLY_DELETED_RETENTION_DAYS } from '../store/db'
 import type { Chapter, Scene } from '../types'
 
 const GROUP_SEQUENCE: TocGroup[] = ['matter-start', 'prologue', 'regular', 'epilogue', 'matter-end']
@@ -191,7 +192,7 @@ export default function TableOfContents() {
   const totalEntries = populatedGroups.reduce((sum, g) => sum + g.items.length, 0)
 
   const listPane = (
-    <div className="flex-1 overflow-y-auto px-4 py-4">
+    <div className="flex-1 overflow-y-auto px-4 pt-4 fab-scroll-clearance">
       {totalEntries === 0 && (
         <p className="text-parchment-muted italic text-center mt-10">
           No entries yet. Tap "New Entry" below to begin the tale.
@@ -582,7 +583,7 @@ export default function TableOfContents() {
       <ConfirmDialog
         open={!!deletingChapter && deletingChapterSceneCount === 0}
         title="Delete this chapter?"
-        message={`"${deletingChapter ? chapterHeading(dataset.chapters, projectId, deletingChapter) : ''}" is empty and will be permanently deleted. This cannot be undone.`}
+        message={`"${deletingChapter ? chapterHeading(dataset.chapters, projectId, deletingChapter) : ''}" is empty and will move to Recently Deleted, where it can be restored for ${RECENTLY_DELETED_RETENTION_DAYS} days.`}
         confirmLabel="Delete Chapter"
         onCancel={() => setDeletingChapter(null)}
         onConfirm={() => {

@@ -22,12 +22,22 @@ export default function IndexFAB({ projectId }: { projectId: string }) {
   const isOnIndex = location.pathname === `/project/${projectId}/index`
   if (isOnIndex) return null
 
+  // Size and offset read from the same --fab-size/--fab-offset tokens that
+  // .fab-scroll-clearance (see index.css) derives its padding from, so a
+  // future resize of this button can't silently leave scrollable content
+  // clearing the wrong amount of space.
   return (
     <button
       type="button"
       onClick={() => navigate(`/project/${projectId}/index`)}
       aria-label="Open Index"
-      className="fixed bottom-5 right-5 z-40 h-14 w-14 rounded-full border-2 border-gold bg-accent hover:bg-accent-bright text-gold shadow-lg shadow-black/50 flex items-center justify-center transition-colors"
+      style={{
+        height: 'var(--fab-size)',
+        width: 'var(--fab-size)',
+        bottom: 'var(--fab-offset)',
+        right: 'var(--fab-offset)',
+      }}
+      className="fixed z-40 rounded-full border-2 border-gold bg-accent hover:bg-accent-bright text-gold shadow-lg shadow-black/50 flex items-center justify-center transition-colors"
     >
       <span className="font-display text-xl leading-none">✦</span>
     </button>

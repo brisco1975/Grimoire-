@@ -72,8 +72,7 @@ export default function EntryModal({
   )
   const filteredAfterCandidates = useMemo(() => {
     const q = positionQuery.trim().toLowerCase()
-    const pool = q ? afterCandidates.filter((s) => sceneHeading(dataset.scenes, s).toLowerCase().includes(q)) : afterCandidates
-    return pool.slice(0, 50)
+    return q ? afterCandidates.filter((s) => sceneHeading(dataset.scenes, s).toLowerCase().includes(q)) : afterCandidates
   }, [afterCandidates, positionQuery, dataset.scenes])
 
   function afterOptionLabel(scene: Scene): string {

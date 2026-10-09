@@ -1,4 +1,4 @@
-export const APP_VERSION = '2.6.3'
+export const APP_VERSION = '2.6.4'
 
 export interface ChangelogEntry {
   version: string
@@ -8,6 +8,18 @@ export interface ChangelogEntry {
 
 // Append new entries to the TOP of this array as the app evolves.
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '2.6.4',
+    date: '2026-10-09',
+    changes: [
+      'Fixed: the Index and Cards screen headers could truncate the project title so badly that the word "Index" or "Cards" was cut off entirely. The screen label now sits on its own line below the (still-truncating-if-needed) project title, slightly smaller, and never gets cut off.',
+      'Delete confirmations now say what actually happens: a scene, chapter, Index entry, or cleared card content moves to Recently Deleted and can be restored for 30 days (and restoring reconnects any broken Connections or [[links]]) — these no longer wrongly claim to be permanent. Deleting a whole project, a custom card, or emptying Recently Deleted still warn that those truly cannot be undone.',
+      'Added a "Delete forever" control to each item in Recently Deleted, so a single item can be permanently discarded without clearing the whole list with "Empty Now." "Empty Now" now states how many items it will erase.',
+      'Fixed: the ON/OFF switches on the Cards screen (and everywhere else they appear) rendered with the knob pushed outside the right edge of its track when ON.',
+      'Fixed: the last card on a Scene Page (and the bottom of the Table of Contents) could scroll only partway clear of the floating Index button, leaving its "Edit" and "Show more" controls underneath it. Scrollable content now always clears the button with room to spare.',
+      'The See Also picker (and the Connections and "insert after" scene pickers) silently dropped entries past a fixed count, always the most recently created ones, even though searching still found them — all three now always show every eligible entry. The See Also picker also now shows an already-linked match dimmed as "Already linked" instead of a misleading "No matching entries found," a live "N available · N already linked" count, and a type filter (All / Person(s) / Place / Thing) that combines with search.',
+    ],
+  },
   {
     version: '2.6.3',
     date: '2026-10-09',

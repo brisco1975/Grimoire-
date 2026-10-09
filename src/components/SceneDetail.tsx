@@ -11,6 +11,7 @@ import Modal from './Modal'
 import { sceneHeading, groupMembers, type InsertPosition } from '../utils/tocOrdering'
 import { chapterHeading, projectChapters } from '../utils/chapters'
 import { TEXT_CARDS, isCardVisible } from '../data/cards'
+import { RECENTLY_DELETED_RETENTION_DAYS } from '../store/db'
 import type { ConnectionTarget, IndexEntry, Scene, SceneConnection } from '../types'
 
 function TextCardButton({
@@ -169,7 +170,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3 content-start items-start">
+      <div className="flex-1 overflow-y-auto px-4 pt-4 fab-scroll-clearance grid grid-cols-1 sm:grid-cols-2 gap-3 content-start items-start">
         {compactCards.map(({ key, label }) => (
           <TextCardButton
             key={key}
@@ -432,7 +433,7 @@ export default function SceneDetail({ projectId, scene }: { projectId: string; s
       <ConfirmDialog
         open={confirmDelete}
         title="Delete this entry?"
-        message={`"${sceneHeading(dataset.scenes, scene)}" will be permanently deleted. Connections from other scenes to it will remain and show as broken. This cannot be undone.`}
+        message={`"${sceneHeading(dataset.scenes, scene)}" will move to Recently Deleted, where it can be restored for ${RECENTLY_DELETED_RETENTION_DAYS} days. Connections from other scenes to it will show as broken in the meantime — restoring it reconnects them.`}
         confirmLabel="Delete"
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {
@@ -498,8 +499,7 @@ function MarkAsWrittenModal({
   }
   const filteredAfterCandidates = useMemo(() => {
     const q = positionQuery.trim().toLowerCase()
-    const pool = q ? regularScenes.filter((s) => sceneHeading(dataset.scenes, s).toLowerCase().includes(q)) : regularScenes
-    return pool.slice(0, 50)
+    return q ? regularScenes.filter((s) => sceneHeading(dataset.scenes, s).toLowerCase().includes(q)) : regularScenes
   }, [regularScenes, positionQuery, dataset.scenes])
   function selectedPositionLabel(): string {
     if (insertChoice === 'keep') return 'Keep current position'

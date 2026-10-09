@@ -4,29 +4,9 @@ import { useApp } from '../store/AppContext'
 import AppHeader from '../components/AppHeader'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Modal from '../components/Modal'
+import Toggle from '../components/Toggle'
 import { BUILTIN_CARD_ROWS, isCardVisible } from '../data/cards'
 import type { CustomCardDef } from '../types'
-
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (next: boolean) => void; label: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-      className={`relative shrink-0 h-6 w-11 rounded-full border transition-colors ${
-        on ? 'bg-accent border-accent' : 'bg-surface-2 border-inset'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-parchment transition-transform ${
-          on ? 'translate-x-6' : 'translate-x-1'
-        }`}
-      />
-    </button>
-  )
-}
 
 export default function ProjectSettings() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -77,7 +57,7 @@ export default function ProjectSettings() {
 
   return (
     <div className="flex-1 flex flex-col">
-      <AppHeader title={`${project.title} — Cards`} onBack={() => navigate(-1)} showSettings={false} />
+      <AppHeader title={project.title} subtitle="Cards" onBack={() => navigate(-1)} showSettings={false} />
 
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-6 max-w-2xl mx-auto w-full">
         <section className="rounded-lg border border-inset bg-surface p-4">

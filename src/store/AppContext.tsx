@@ -80,6 +80,7 @@ type Action =
   | { type: 'CLEAR_CARD_CONTENT'; sceneId: string; cardKey: string; cardLabel: string; isCustomCard: boolean }
   | { type: 'RESTORE_DELETED_ITEM'; id: string }
   | { type: 'RESOLVE_RESTORE_COLLISION'; deletedItemId: string; resolution: 'swap' | 'discard' }
+  | { type: 'DELETE_RECENTLY_DELETED_ITEM'; id: string }
   | { type: 'EMPTY_RECENTLY_DELETED' }
 
 /** Ensures the project has at least one chapter, returning the LAST one's id (creating an unnamed one if none exist yet) plus the possibly-extended chapters array. */
@@ -809,6 +810,12 @@ function baseReducer(state: GrimoireDataset, action: Action): GrimoireDataset {
       // with shouldn't be reachable, but never leave the deleted record
       // stuck in limbo if it somehow happens.
       return { ...state, recentlyDeleted: recentlyDeletedWithoutItem }
+    }
+    case 'DELETE_RECENTLY_DELETED_ITEM': {
+      // Permanently forgets ONE trashed item — unlike EMPTY_RECENTLY_DELETED
+      // (everything at once), this never touches any other Recently Deleted
+      // record or any live data.
+      return { ...state, recentlyDeleted: state.recentlyDeleted.filter((d) => d.id !== action.id) }
     }
     case 'EMPTY_RECENTLY_DELETED': {
       return { ...state, recentlyDeleted: [] }

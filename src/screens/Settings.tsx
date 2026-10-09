@@ -505,6 +505,7 @@ export default function Settings() {
 
   const [deletedOpen, setDeletedOpen] = useState(false)
   const [confirmEmptyDeleted, setConfirmEmptyDeleted] = useState(false)
+  const [deletingForeverItem, setDeletingForeverItem] = useState<DeletedItem | null>(null)
   const [restoreCollision, setRestoreCollision] = useState<{ item: DeletedItem; collision: RestoreCollision } | null>(
     null,
   )
@@ -596,22 +597,28 @@ export default function Settings() {
                 <>
                   <div className="flex flex-col gap-2">
                     {dataset.recentlyDeleted.map((item) => (
-                      <div
-                        key={item.id}
-                        className="rounded border border-inset bg-canvas px-3 py-2 flex items-center justify-between gap-3"
-                      >
+                      <div key={item.id} className="rounded border border-inset bg-canvas px-3 py-2 flex flex-col gap-2">
                         <div className="min-w-0">
                           <div className="text-gold-dim text-xs uppercase tracking-wide">{kindLabelFor(item.kind)}</div>
                           <div className="text-parchment text-sm truncate">{item.label}</div>
                           <div className="text-parchment-muted text-xs">{formatTimestamp(item.deletedAt)}</div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreClick(item)}
-                          className="shrink-0 px-3 py-1.5 rounded border border-inset text-parchment hover:border-gold-dim transition-colors text-sm"
-                        >
-                          Restore
-                        </button>
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreClick(item)}
+                            className="px-3 py-1.5 rounded border border-inset text-parchment hover:border-gold-dim transition-colors text-sm"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingForeverItem(item)}
+                            className="text-accent-bright hover:text-accent text-sm transition-colors"
+                          >
+                            Delete forever
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -910,12 +917,24 @@ export default function Settings() {
       <ConfirmDialog
         open={confirmEmptyDeleted}
         title="Empty Recently Deleted?"
-        message="Everything in Recently Deleted will be permanently removed right now, instead of waiting out the 30-day window. This cannot be undone."
+        message={`${dataset.recentlyDeleted.length} item${dataset.recentlyDeleted.length === 1 ? '' : 's'} will be permanently removed right now, instead of waiting out the ${RECENTLY_DELETED_RETENTION_DAYS}-day window. This cannot be undone.`}
         confirmLabel="Empty Now"
         onCancel={() => setConfirmEmptyDeleted(false)}
         onConfirm={() => {
           dispatch({ type: 'EMPTY_RECENTLY_DELETED' })
           setConfirmEmptyDeleted(false)
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deletingForeverItem}
+        title="Delete forever?"
+        message={`"${deletingForeverItem?.label}" will be permanently deleted. This cannot be undone.`}
+        confirmLabel="Delete forever"
+        onCancel={() => setDeletingForeverItem(null)}
+        onConfirm={() => {
+          if (deletingForeverItem) dispatch({ type: 'DELETE_RECENTLY_DELETED_ITEM', id: deletingForeverItem.id })
+          setDeletingForeverItem(null)
         }}
       />
 
